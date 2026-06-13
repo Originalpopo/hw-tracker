@@ -327,7 +327,7 @@ export default function Dashboard() {
             borderColor="border-gray-200"
             headerColor="bg-gray-100"
           >
-            {(task) => (
+            {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
@@ -347,7 +347,7 @@ export default function Dashboard() {
             borderColor="border-blue-100"
             headerColor="bg-blue-100/50"
           >
-            {(task) => (
+            {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors">
@@ -370,7 +370,7 @@ export default function Dashboard() {
             borderColor="border-green-100"
             headerColor="bg-green-100/50"
           >
-            {(task) => (
+            {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center">
