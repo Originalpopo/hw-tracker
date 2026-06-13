@@ -105,19 +105,16 @@ export async function deleteChildTask(taskId: string) {
 export async function clearAllChildTasks(studentName: string, subject?: string) {
   if (!studentName) return;
   
-  let q;
-  if (subject && subject !== 'All') {
-    q = query(
-      collection(db, CHILD_TASKS_COLLECTION),
-      where("student_name", "==", studentName),
-      where("subject", "==", subject)
-    );
-  } else {
-    q = query(
-      collection(db, CHILD_TASKS_COLLECTION),
-      where("student_name", "==", studentName)
-    );
-  }
+  const q = (subject && subject !== 'All') 
+    ? query(
+        collection(db, CHILD_TASKS_COLLECTION),
+        where("student_name", "==", studentName),
+        where("subject", "==", subject)
+      )
+    : query(
+        collection(db, CHILD_TASKS_COLLECTION),
+        where("student_name", "==", studentName)
+      );
 
   const querySnapshot = await getDocs(q);
   const deletePromises = querySnapshot.docs.map(d => deleteDoc(d.ref));
