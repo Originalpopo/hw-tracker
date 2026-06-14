@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud } from 'lucide-react';
-import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns } from '@/lib/db';
+import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 
@@ -25,13 +25,24 @@ export default function Dashboard() {
   const [filterSubject, setFilterSubject] = useState<string>('All');
 
   useEffect(() => {
-    const savedName = localStorage.getItem('hw_student_name');
-    setStudentName(savedName);
-    if (savedName) {
-      loadTasks(savedName);
-    } else {
-      setLoading(false);
-    }
+    const init = async () => {
+      let savedName = localStorage.getItem('hw_student_name');
+      if (!savedName) {
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings) {
+          savedName = globalSettings.student_name;
+          localStorage.setItem('hw_student_name', savedName);
+          localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
+        }
+      }
+      setStudentName(savedName);
+      if (savedName) {
+        loadTasks(savedName);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
   }, []);
 
   const loadTasks = async (name: string) => {

@@ -157,3 +157,35 @@ export async function syncTeacherColumn(column: TeacherColumn) {
   const docRef = doc(db, TEACHER_COLUMNS_COLLECTION, column.id);
   await setDoc(docRef, column, { merge: true });
 }
+
+// --- Global Settings ---
+
+const SETTINGS_COLLECTION = "app_settings";
+const GLOBAL_SETTINGS_DOC = "global_settings";
+
+export interface AppSettings {
+  student_name: string;
+  sheet_urls: string;
+}
+
+export async function getGlobalSettings(): Promise<AppSettings | null> {
+  try {
+    const docRef = doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as AppSettings;
+    }
+  } catch (error) {
+    console.error("Error getting global settings", error);
+  }
+  return null;
+}
+
+export async function saveGlobalSettings(settings: AppSettings) {
+  try {
+    const docRef = doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC);
+    await setDoc(docRef, settings, { merge: true });
+  } catch (error) {
+    console.error("Error saving global settings", error);
+  }
+}

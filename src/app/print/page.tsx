@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getTeacherColumns, TeacherColumn } from '@/lib/db';
+import { getTeacherColumns, TeacherColumn, getGlobalSettings } from '@/lib/db';
 import Link from 'next/link';
 import { ArrowLeft, Printer } from 'lucide-react';
 
@@ -11,13 +11,24 @@ export default function PrintPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const name = localStorage.getItem('hw_student_name');
-    if (name) {
-      setStudentName(name);
-      loadData(name);
-    } else {
-      setLoading(false);
-    }
+    const init = async () => {
+      let name = localStorage.getItem('hw_student_name');
+      if (!name) {
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings) {
+          name = globalSettings.student_name;
+          localStorage.setItem('hw_student_name', name);
+          localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
+        }
+      }
+      if (name) {
+        setStudentName(name);
+        loadData(name);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
   }, []);
 
   const loadData = async (name: string) => {

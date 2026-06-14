@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getChildTasks, ChildTask } from '@/lib/db';
+import { getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
 import { Trophy, Target, Star, CalendarDays, ArrowRight, Flame, Zap, Printer, BookOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -12,13 +12,24 @@ export default function DashboardOverview() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const name = localStorage.getItem('hw_student_name');
-    if (name) {
-      setStudentName(name);
-      loadData(name);
-    } else {
-      setLoading(false);
-    }
+    const init = async () => {
+      let name = localStorage.getItem('hw_student_name');
+      if (!name) {
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings) {
+          name = globalSettings.student_name;
+          localStorage.setItem('hw_student_name', name);
+          localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
+        }
+      }
+      if (name) {
+        setStudentName(name);
+        loadData(name);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
   }, []);
 
   const loadData = async (name: string) => {

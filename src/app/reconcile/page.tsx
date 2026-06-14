@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { RefreshCcw, Link as LinkIcon, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter } from 'lucide-react';
-import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask } from '@/lib/db';
+import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask, getGlobalSettings } from '@/lib/db';
 import Fuse from 'fuse.js';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -28,25 +28,38 @@ export default function ReconcilePage() {
   const [filterSubject, setFilterSubject] = useState<string>('All');
   
   useEffect(() => {
-    const savedName = localStorage.getItem('hw_student_name');
-    const savedUrlsStr = localStorage.getItem('hw_sheet_urls');
-    const oldUrl = localStorage.getItem('hw_sheet_url');
-    
-    setStudentName(savedName);
-    
-    let urls: string[] = [];
-    if (savedUrlsStr) {
-      urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
-    } else if (oldUrl) {
-      urls = [oldUrl];
-    }
-    setSheetUrls(urls);
+    const init = async () => {
+      let savedName = localStorage.getItem('hw_student_name');
+      let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
+      const oldUrl = localStorage.getItem('hw_sheet_url');
+      
+      if (!savedName || (!savedUrlsStr && !oldUrl)) {
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings) {
+          savedName = globalSettings.student_name;
+          savedUrlsStr = globalSettings.sheet_urls;
+          localStorage.setItem('hw_student_name', savedName);
+          localStorage.setItem('hw_sheet_urls', savedUrlsStr);
+        }
+      }
 
-    if (savedName) {
-      loadData(savedName);
-    } else {
-      setLoading(false);
-    }
+      setStudentName(savedName || null);
+      
+      let urls: string[] = [];
+      if (savedUrlsStr) {
+        urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
+      } else if (oldUrl) {
+        urls = [oldUrl];
+      }
+      setSheetUrls(urls);
+
+      if (savedName) {
+        loadData(savedName);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
   }, []);
 
   const loadData = async (name: string) => {

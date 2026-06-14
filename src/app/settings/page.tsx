@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Save, UserCircle, RefreshCcw, CheckCircle2 } from 'lucide-react';
+import { getGlobalSettings, saveGlobalSettings } from '@/lib/db';
 
 export default function SettingsPage() {
   const [students, setStudents] = useState<string[]>([]);
@@ -12,20 +13,32 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load previously selected student and sheet URL
-    const savedName = localStorage.getItem('hw_student_name');
-    const savedUrls = localStorage.getItem('hw_sheet_urls');
-    const oldUrl = localStorage.getItem('hw_sheet_url'); // fallback
-    
-    if (savedName) setSelectedStudent(savedName);
-    
-    if (savedUrls) {
-      setSheetUrls(savedUrls);
-      fetchStudents(savedUrls.split('\n')[0]);
-    } else if (oldUrl) {
-      setSheetUrls(oldUrl);
-      fetchStudents(oldUrl);
-    }
+    const init = async () => {
+      let savedName = localStorage.getItem('hw_student_name');
+      let savedUrls = localStorage.getItem('hw_sheet_urls');
+      const oldUrl = localStorage.getItem('hw_sheet_url'); // fallback
+      
+      if (!savedName || (!savedUrls && !oldUrl)) {
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings) {
+          savedName = globalSettings.student_name;
+          savedUrls = globalSettings.sheet_urls;
+          localStorage.setItem('hw_student_name', savedName);
+          localStorage.setItem('hw_sheet_urls', savedUrls);
+        }
+      }
+      
+      if (savedName) setSelectedStudent(savedName);
+      
+      if (savedUrls) {
+        setSheetUrls(savedUrls);
+        fetchStudents(savedUrls.split('\n')[0]);
+      } else if (oldUrl) {
+        setSheetUrls(oldUrl);
+        fetchStudents(oldUrl);
+      }
+    };
+    init();
   }, []);
 
   const fetchStudents = async (url: string) => {
@@ -54,7 +67,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const urls = sheetUrls.split('\n').map(u => u.trim()).filter(Boolean);
     if (!selectedStudent || urls.length === 0) {
       setError('กรุณาใส่ลิงก์อย่างน้อย 1 ลิงก์ และเลือกชื่อนักเรียน');
@@ -66,12 +79,16 @@ export default function SettingsPage() {
     localStorage.setItem('hw_student_name', selectedStudent);
     localStorage.setItem('hw_sheet_urls', sheetUrls);
     
-    setTimeout(() => {
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-      // Force reload or trigger an event so Navigation updates (in a real app we might use Context/Zustand)
-      window.dispatchEvent(new Event('storage'));
-    }, 500);
+    // Save to Firebase globally
+    await saveGlobalSettings({
+      student_name: selectedStudent,
+      sheet_urls: sheetUrls
+    });
+    
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus('idle'), 2000);
+    // Force reload or trigger an event so Navigation updates (in a real app we might use Context/Zustand)
+    window.dispatchEvent(new Event('storage'));
   };
 
   return (
