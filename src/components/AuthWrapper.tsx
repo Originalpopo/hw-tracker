@@ -89,7 +89,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     <div className="fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center animate-in fade-in duration-500">
       <div className="absolute top-8 w-full flex justify-center items-center">
         <Flame className="w-8 h-8 text-orange-500 mr-2" />
-        <span className="text-2xl font-black text-gray-900 tracking-tight">HW Tracker</span>
+        <span className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-800 tracking-tight">HW Tracker</span>
       </div>
       
       <div className="w-full max-w-sm px-8 mt-12">

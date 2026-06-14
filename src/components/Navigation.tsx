@@ -33,9 +33,7 @@ export default function Navigation() {
         <div className="md:flex-1 md:flex md:flex-col md:px-4 md:py-6 h-16 md:h-auto flex items-center md:items-stretch px-4 sm:px-6">
           <div className="flex-shrink-0 flex items-center md:mb-8">
             <Link href="/" className="flex items-center group transition-transform active:scale-95">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center shadow-sm mr-3">
-                <Flame className="w-5 h-5 text-white" />
-              </div>
+              <Flame className="w-8 h-8 text-orange-500 mr-2 group-hover:scale-110 transition-transform" />
               <span className="text-xl md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-800 tracking-tight group-hover:opacity-80 transition-opacity">
                 HW Tracker
               </span>
