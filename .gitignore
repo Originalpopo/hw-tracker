@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI Communication and Personal Notes
+SKILL.md
+AGENTS.md
+CLAUDE.md
+"Firebase SDK.txt"
