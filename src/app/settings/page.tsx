@@ -9,6 +9,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
   const [sheetUrls, setSheetUrls] = useState<string>('');
+  const [appPin, setAppPin] = useState<string>('0411');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +24,17 @@ export default function SettingsPage() {
         if (globalSettings) {
           savedName = globalSettings.student_name;
           savedUrls = globalSettings.sheet_urls;
+          if (globalSettings.app_pin) {
+            setAppPin(globalSettings.app_pin);
+          }
           localStorage.setItem('hw_student_name', savedName);
           localStorage.setItem('hw_sheet_urls', savedUrls);
+        }
+      } else {
+        // Just fetch the pin if local storage existed
+        const globalSettings = await getGlobalSettings();
+        if (globalSettings && globalSettings.app_pin) {
+          setAppPin(globalSettings.app_pin);
         }
       }
       
@@ -73,6 +83,10 @@ export default function SettingsPage() {
       setError('กรุณาใส่ลิงก์อย่างน้อย 1 ลิงก์ และเลือกชื่อนักเรียน');
       return;
     }
+    if (appPin.length !== 4 || !/^\d{4}$/.test(appPin)) {
+      setError('รหัส PIN ต้องเป็นตัวเลข 4 หลักเท่านั้น');
+      return;
+    }
     setSaveStatus('saving');
     
     // Save to localStorage
@@ -82,7 +96,8 @@ export default function SettingsPage() {
     // Save to Firebase globally
     await saveGlobalSettings({
       student_name: selectedStudent,
-      sheet_urls: sheetUrls
+      sheet_urls: sheetUrls,
+      app_pin: appPin
     });
     
     setSaveStatus('saved');
@@ -163,6 +178,27 @@ export default function SettingsPage() {
                 <RefreshCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              รหัส PIN สำหรับเข้าใช้งานระบบ (4 หลัก)
+            </label>
+            <input 
+              type="text"
+              maxLength={4}
+              pattern="\d*"
+              value={appPin}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setAppPin(val);
+              }}
+              placeholder="0411"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-center text-xl tracking-[0.5em] font-bold text-gray-800"
+            />
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              รหัสผ่านที่ใช้สำหรับปลดล็อกเข้าสู่ระบบของทุกคนในครอบครัว (ค่าเริ่มต้น 0411)
+            </p>
           </div>
 
           <div className="pt-4">

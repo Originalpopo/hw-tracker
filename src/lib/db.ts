@@ -166,6 +166,7 @@ const GLOBAL_SETTINGS_DOC = "global_settings";
 export interface AppSettings {
   student_name: string;
   sheet_urls: string;
+  app_pin?: string;
 }
 
 export async function getGlobalSettings(): Promise<AppSettings | null> {
