@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Lock, Delete, Loader2, KeyRound } from 'lucide-react';
+import { Lock, Delete, Loader2, KeyRound, Flame } from 'lucide-react';
 import { getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 
@@ -10,6 +10,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true);
   const [pin, setPin] = useState('');
   const [correctPin, setCorrectPin] = useState('0411');
+  const [pinHint, setPinHint] = useState('ค่าเริ่มต้น: 0411');
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -23,8 +24,9 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       // 2. Fetch global settings to get current PIN
       try {
         const settings = await getGlobalSettings();
-        if (settings && settings.app_pin) {
-          setCorrectPin(settings.app_pin);
+        if (settings) {
+          if (settings.app_pin) setCorrectPin(settings.app_pin);
+          if (settings.app_pin_hint) setPinHint(settings.app_pin_hint);
         }
       } catch (e) {
         console.error('Failed to get PIN from db', e);
@@ -85,7 +87,12 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
 
   return (
     <div className="fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center animate-in fade-in duration-500">
-      <div className="w-full max-w-sm px-8">
+      <div className="absolute top-8 w-full flex justify-center items-center">
+        <Flame className="w-8 h-8 text-orange-500 mr-2" />
+        <span className="text-2xl font-black text-gray-900 tracking-tight">HW Tracker</span>
+      </div>
+      
+      <div className="w-full max-w-sm px-8 mt-12">
         <div className="flex flex-col items-center mb-12">
           <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center mb-6 shadow-inner relative rotate-3">
             <Lock className="w-12 h-12 text-blue-600" />
@@ -94,7 +101,10 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
             </div>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">ป้อนรหัส PIN</h1>
-          <p className="text-gray-500 text-sm text-center">ระบบถูกล็อกเพื่อความเป็นส่วนตัว<br/>กรุณาป้อนรหัสผ่าน 4 หลัก (ค่าเริ่มต้น: 0411)</p>
+          <p className="text-gray-500 text-sm text-center">
+            ระบบถูกล็อกเพื่อความเป็นส่วนตัว<br/>
+            <span className="text-blue-600 font-medium">คำใบ้: {pinHint}</span>
+          </p>
         </div>
 
         {/* PIN Dots */}

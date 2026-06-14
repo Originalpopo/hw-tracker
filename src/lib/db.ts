@@ -167,6 +167,7 @@ export interface AppSettings {
   student_name: string;
   sheet_urls: string;
   app_pin?: string;
+  app_pin_hint?: string;
 }
 
 export async function getGlobalSettings(): Promise<AppSettings | null> {

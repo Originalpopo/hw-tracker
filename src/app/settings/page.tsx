@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const [selectedStudent, setSelectedStudent] = useState<string>('');
   const [sheetUrls, setSheetUrls] = useState<string>('');
   const [appPin, setAppPin] = useState<string>('0411');
+  const [appPinHint, setAppPinHint] = useState<string>('ค่าเริ่มต้น: 0411');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -27,14 +28,18 @@ export default function SettingsPage() {
           if (globalSettings.app_pin) {
             setAppPin(globalSettings.app_pin);
           }
+          if (globalSettings.app_pin_hint) {
+            setAppPinHint(globalSettings.app_pin_hint);
+          }
           localStorage.setItem('hw_student_name', savedName);
           localStorage.setItem('hw_sheet_urls', savedUrls);
         }
       } else {
         // Just fetch the pin if local storage existed
         const globalSettings = await getGlobalSettings();
-        if (globalSettings && globalSettings.app_pin) {
-          setAppPin(globalSettings.app_pin);
+        if (globalSettings) {
+          if (globalSettings.app_pin) setAppPin(globalSettings.app_pin);
+          if (globalSettings.app_pin_hint) setAppPinHint(globalSettings.app_pin_hint);
         }
       }
       
@@ -97,7 +102,8 @@ export default function SettingsPage() {
     await saveGlobalSettings({
       student_name: selectedStudent,
       sheet_urls: sheetUrls,
-      app_pin: appPin
+      app_pin: appPin,
+      app_pin_hint: appPinHint
     });
     
     setSaveStatus('saved');
@@ -181,23 +187,40 @@ export default function SettingsPage() {
           </div>
 
           <div className="border-t border-gray-100 pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              รหัส PIN สำหรับเข้าใช้งานระบบ (4 หลัก)
-            </label>
-            <input 
-              type="text"
-              maxLength={4}
-              pattern="\d*"
-              value={appPin}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '');
-                setAppPin(val);
-              }}
-              placeholder="0411"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-center text-xl tracking-[0.5em] font-bold text-gray-800"
-            />
-            <p className="text-xs text-gray-500 mt-2 text-center">
-              รหัสผ่านที่ใช้สำหรับปลดล็อกเข้าสู่ระบบของทุกคนในครอบครัว (ค่าเริ่มต้น 0411)
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  รหัส PIN (4 หลัก)
+                </label>
+                <input 
+                  type="text"
+                  maxLength={4}
+                  pattern="\d*"
+                  value={appPin}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    setAppPin(val);
+                  }}
+                  placeholder="0411"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-center text-xl tracking-[0.5em] font-bold text-gray-800"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  คำใบ้รหัสผ่าน (PIN Hint)
+                </label>
+                <input 
+                  type="text"
+                  value={appPinHint}
+                  onChange={(e) => setAppPinHint(e.target.value)}
+                  placeholder="เช่น วันเดือนเกิดของลูก"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-gray-800"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-3 text-center">
+              รหัสผ่านที่ใช้สำหรับปลดล็อกเข้าสู่ระบบของทุกคนในครอบครัว
             </p>
           </div>
 
