@@ -10,6 +10,7 @@ export default function DashboardOverview() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [studentName, setStudentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [animateBars, setAnimateBars] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -30,6 +31,9 @@ export default function DashboardOverview() {
       }
     };
     init();
+
+    const t = setTimeout(() => setAnimateBars(true), 100);
+    return () => clearTimeout(t);
   }, []);
 
   const loadData = async (name: string) => {
@@ -132,7 +136,7 @@ export default function DashboardOverview() {
           <div className="w-full bg-gray-100 rounded-full h-6 shadow-inner mt-2 relative">
             <div 
               className={clsx("h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative", progressPercent === 100 ? "bg-gradient-to-r from-green-400 to-green-500" : "bg-gradient-to-r from-orange-400 to-orange-500")}
-              style={{ width: `${progressPercent}%` }}
+              style={{ width: animateBars ? `${progressPercent}%` : '0%' }}
             >
               {progressPercent > 0 && (
                 <span className="absolute -right-3 top-1/2 transform -translate-y-1/2 text-3xl drop-shadow-md z-10">
@@ -233,14 +237,19 @@ export default function DashboardOverview() {
                     {percent}%
                   </div>
                 </div>
-                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden shadow-inner">
+                <div className="w-full bg-gray-100 rounded-full h-3 shadow-inner relative mt-2">
                   <div 
                     className={clsx(
-                      "h-full transition-all duration-1000 ease-out flex items-center justify-end px-1",
-                      percent === 100 ? "bg-green-500" : "bg-gradient-to-r from-orange-300 to-orange-500"
+                      "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
+                      percent === 100 ? "bg-gradient-to-r from-green-400 to-green-500" : "bg-gradient-to-r from-orange-300 to-orange-500"
                     )}
-                    style={{ width: `${percent}%` }}
+                    style={{ width: animateBars ? `${percent}%` : '0%' }}
                   >
+                    {percent > 0 && (
+                      <span className="absolute -right-2.5 top-1/2 transform -translate-y-1/2 text-xl drop-shadow-sm z-10">
+                        {percent === 100 ? '🏆' : '🔥'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
