@@ -5,10 +5,16 @@ import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2,
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+import confetti from 'canvas-confetti';
 
 const DEFAULT_SUBJECTS = ['ภาษาไทย', 'คณิตศาสตร์', 'วิทยาศาสตร์', 'ภาษาอังกฤษ', 'สังคมศึกษา', 'ประวัติศาสตร์', 'สุขศึกษา', 'ศิลปะ', 'การงานอาชีพ', 'อื่นๆ'];
 
-export default function Dashboard() {
+function HomeworkDashboard() {
+  const searchParams = useSearchParams();
+  const defaultFilter = searchParams.get('subject') || 'All';
+
   const [studentName, setStudentName] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
@@ -22,7 +28,7 @@ export default function Dashboard() {
   const [importing, setImporting] = useState(false);
 
   // Filter state
-  const [filterSubject, setFilterSubject] = useState<string>('All');
+  const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
 
   useEffect(() => {
     const init = async () => {
@@ -90,6 +96,15 @@ export default function Dashboard() {
   const handleUpdateStatus = async (taskId: string, newStatus: TaskStatus) => {
     if (!studentName) return;
     try {
+      if (newStatus === 'Done') {
+        confetti({
+          particleCount: 40,
+          spread: 60,
+          origin: { y: 0.7 },
+          colors: ['#22c55e', '#eab308', '#3b82f6']
+        });
+      }
+
       // Optimistic update
       setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
       await updateChildTaskStatus(taskId, newStatus);
@@ -341,7 +356,7 @@ export default function Dashboard() {
             {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 active:scale-95 transition-all">
                     เริ่มทำ
                   </button>
                 </div>
@@ -361,10 +376,10 @@ export default function Dashboard() {
             {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 active:scale-95 transition-all">
                     ทำเสร็จแล้ว
                   </button>
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Todo')} className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'Todo')} className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 active:scale-95 transition-all">
                     พักไว้
                   </button>
                 </div>
@@ -384,7 +399,7 @@ export default function Dashboard() {
             {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center">
                     <Send className="w-3 h-3 mr-1.5" /> ส่งครูแล้ว
                   </button>
                 </div>
@@ -408,6 +423,18 @@ export default function Dashboard() {
         </>
       )}
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+      </div>
+    }>
+      <HomeworkDashboard />
+    </Suspense>
   );
 }
 
@@ -446,7 +473,7 @@ function TaskCard({ task, children, onUpdateName, onDelete }: any) {
   };
 
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden group">
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
       {task.status === 'Rework' && (
         <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg z-10">
           ต้องแก้!

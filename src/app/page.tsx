@@ -5,6 +5,7 @@ import { getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
 import { Trophy, Target, Star, CalendarDays, ArrowRight, Flame, Zap, Printer, BookOpen, ListTodo } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
+import confetti from 'canvas-confetti';
 
 export default function DashboardOverview() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
@@ -47,6 +48,44 @@ export default function DashboardOverview() {
     }
   };
 
+  // Stats calculation
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter(t => ['Done', 'Submitted', 'Verified'].includes(t.status)).length;
+  const pendingTasks = tasks.filter(t => !['Done', 'Submitted', 'Verified'].includes(t.status)).length;
+  
+  const progressPercent = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+  // Trigger confetti when hitting 100%
+  useEffect(() => {
+    if (progressPercent === 100 && totalTasks > 0) {
+      // Fire confetti from the bottom edges
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 5,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 },
+          colors: ['#3b82f6', '#f97316', '#22c55e', '#a855f7', '#eab308']
+        });
+        confetti({
+          particleCount: 5,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 },
+          colors: ['#3b82f6', '#f97316', '#22c55e', '#a855f7', '#eab308']
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    }
+  }, [progressPercent, totalTasks]);
+
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
@@ -61,13 +100,6 @@ export default function DashboardOverview() {
       </div>
     );
   }
-
-  // Stats calculation
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => ['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  const pendingTasks = tasks.filter(t => !['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  
-  const progressPercent = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
   // Recent tasks (last 3 pending)
   const recentPending = tasks
@@ -97,7 +129,7 @@ export default function DashboardOverview() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Hero Welcome Card */}
       <div className="bg-gradient-to-br from-blue-400 to-blue-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-4">
+        <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-4 animate-float">
           <Trophy className="w-48 h-48" />
         </div>
         <div className="relative z-10">
@@ -105,8 +137,8 @@ export default function DashboardOverview() {
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
               Hi. {studentName}! 🚀
             </h1>
-            <Link href="/homework" className="bg-white text-blue-700 px-6 py-3 rounded-xl font-bold hover:bg-blue-50 transition-all shadow-md active:scale-95 flex items-center w-max shrink-0">
-              <Zap className="w-5 h-5 mr-2 text-orange-500" /> ลุยภารกิจเลย!
+            <Link href="/homework" className="bg-white text-blue-700 px-6 py-3 rounded-xl font-bold hover:bg-blue-50 hover:scale-105 transition-all duration-300 shadow-md hover:shadow-xl active:scale-95 flex items-center w-max shrink-0 group z-20">
+              <Zap className="w-5 h-5 mr-2 text-orange-500 group-hover:animate-pulse" /> ลุยภารกิจเลย!
             </Link>
           </div>
           <p className="text-blue-100 text-lg max-w-lg">
@@ -214,19 +246,29 @@ export default function DashboardOverview() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {subjects.map(subject => {
             const stats = subjectStats[subject];
+            const pendingCount = stats.total - stats.done;
             const percent = stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100);
-            return (
-              <div key={subject} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col justify-center transition-all hover:shadow-md hover:border-orange-100">
+            
+            const cardContent = (
+              <div className={clsx(
+                "bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col justify-center transition-all duration-300",
+                pendingCount > 0 ? "hover:shadow-lg hover:-translate-y-1 hover:border-orange-200 cursor-pointer group" : "opacity-80"
+              )}>
                 <div className="flex justify-between items-end mb-3">
                   <div className="truncate pr-4">
-                    <h3 className="text-sm font-bold text-gray-800 truncate">{subject}</h3>
+                    <h3 className={clsx(
+                      "text-sm font-bold truncate transition-colors",
+                      pendingCount > 0 ? "text-gray-800 group-hover:text-orange-600" : "text-gray-600"
+                    )}>
+                      {subject}
+                    </h3>
                     <div className="text-[11px] text-gray-500 mt-1.5 flex items-center">
                       <span>รวม {stats.total}</span>
                       <span className="mx-1.5 text-gray-200">|</span>
                       <span className="text-green-600">ทำแล้ว {stats.done}</span>
                       <span className="mx-1.5 text-gray-200">|</span>
-                      <span className={stats.total - stats.done > 0 ? "text-orange-500 font-medium" : "text-gray-400"}>
-                        ค้าง {stats.total - stats.done}
+                      <span className={pendingCount > 0 ? "text-orange-500 font-medium group-hover:font-bold transition-all" : "text-gray-400"}>
+                        ค้าง {pendingCount}
                       </span>
                     </div>
                   </div>
@@ -254,6 +296,20 @@ export default function DashboardOverview() {
                 </div>
               </div>
             );
+
+            if (pendingCount > 0) {
+              return (
+                <Link key={subject} href={`/homework?subject=${encodeURIComponent(subject)}`} className="block">
+                  {cardContent}
+                </Link>
+              );
+            }
+
+            return (
+              <div key={subject}>
+                {cardContent}
+              </div>
+            );
           })}
         </div>
       </div>
@@ -277,9 +333,9 @@ export default function DashboardOverview() {
             </div>
           ) : (
             recentPending.map(task => (
-              <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-orange-200 transition-colors">
+              <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-orange-200 hover:-translate-y-1 hover:shadow-md transition-all duration-300 group">
                 <div className="flex items-center overflow-hidden">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 mr-4 shrink-0 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 mr-4 shrink-0 shadow-sm group-hover:scale-110 transition-transform">
                     <Flame className="w-5 h-5" />
                   </div>
                   <div className="truncate">
@@ -287,7 +343,7 @@ export default function DashboardOverview() {
                     <p className="text-xs text-gray-500 mt-0.5">{task.subject}</p>
                   </div>
                 </div>
-                <Link href="/homework" className="bg-white border border-gray-200 text-gray-600 p-2 rounded-full hover:bg-orange-50 hover:text-orange-600 transition-colors shrink-0 ml-4">
+                <Link href="/homework" className="bg-white border border-gray-200 text-gray-600 p-2 rounded-full hover:bg-orange-50 hover:text-orange-600 transition-all shadow-sm hover:scale-110 shrink-0 ml-4">
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
