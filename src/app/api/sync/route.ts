@@ -32,8 +32,9 @@ export async function POST(request: Request) {
 
     // Preserve first_seen_at or set to current sync time
     for (const col of allTeacherCols) {
-      if (existingColMap.has(col.id)) {
-        col.first_seen_at = existingColMap.get(col.id).first_seen_at || currentSyncTime;
+      const existingCol = existingColMap.get(col.id);
+      if (existingCol) {
+        col.first_seen_at = existingCol.first_seen_at || currentSyncTime;
       } else {
         col.first_seen_at = currentSyncTime;
       }
