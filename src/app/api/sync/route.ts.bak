@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns } from '@/lib/db';
+import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -22,20 +22,6 @@ export async function POST(request: Request) {
       } catch (e) {
         console.error('Error fetching sheet:', url, e);
         // Continue to next sheet even if one fails
-      }
-    }
-
-    // Fetch existing columns to preserve first_seen_at
-    const existingColumns = await getTeacherColumns(studentName);
-    const existingColMap = new Map(existingColumns.map(c => [c.id, c]));
-    const currentSyncTime = Date.now();
-
-    // Preserve first_seen_at or set to current sync time
-    for (const col of allTeacherCols) {
-      if (existingColMap.has(col.id)) {
-        col.first_seen_at = existingColMap.get(col.id).first_seen_at || currentSyncTime;
-      } else {
-        col.first_seen_at = currentSyncTime;
       }
     }
 

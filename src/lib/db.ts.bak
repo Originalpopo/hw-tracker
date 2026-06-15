@@ -39,7 +39,6 @@ export interface TeacherColumn {
   last_synced: Timestamp | Date;
   student_name: string; // The child's name for filtering
   sequence?: number; // Order index from Google Sheet
-  first_seen_at?: number; // Timestamp of when the task was first seen
 }
 
 // --- Collections ---
