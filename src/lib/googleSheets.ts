@@ -115,6 +115,27 @@ export function extractTeacherTasksForStudent(csvData: string[][], studentName: 
     const taskNameRaw = taskRow[col]?.trim();
     if (!taskNameRaw) continue;
 
+    // ตรวจสอบว่ามีนักเรียนอย่างน้อย 1 คนที่ได้ติ๊กถูก (TRUE) ในคอลัมน์นี้หรือไม่
+    // ถ้าไม่มีเลย แสดงว่าครูยังไม่สั่งงานนี้
+    let hasAnyTrue = false;
+    for (let r = studentStartRow; r < csvData.length; r++) {
+      const row = csvData[r];
+      if (!row) continue;
+      
+      const rowName = row[1]?.trim();
+      // ข้ามแถวที่ไม่ใช่ชื่อนักเรียน เช่น แถวหมายเหตุ หรือแถวว่าง
+      if (!rowName || rowName.length <= 2 || rowName.includes('หมายเหตุ')) {
+        continue;
+      }
+
+      if (row[col]?.trim().toUpperCase() === 'TRUE') {
+        hasAnyTrue = true;
+        break;
+      }
+    }
+
+    if (!hasAnyTrue) continue;
+
     const subject = mainSubject;
     const columnName = taskNameRaw;
 
@@ -135,6 +156,7 @@ export function extractTeacherTasksForStudent(csvData: string[][], studentName: 
       is_checked: isChecked,
       student_name: studentName,
       last_synced: now,
+      sequence: col - 1,
     });
   }
 

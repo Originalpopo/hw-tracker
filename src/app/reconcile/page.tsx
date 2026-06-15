@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCcw, Link as LinkIcon, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter } from 'lucide-react';
-import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask, getGlobalSettings } from '@/lib/db';
+import { RefreshCcw, Link as LinkIcon, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter, StickyNote, Trash2 } from 'lucide-react';
+import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask, getGlobalSettings, deleteChildTask } from '@/lib/db';
 import Fuse from 'fuse.js';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -20,9 +20,11 @@ export default function ReconcilePage() {
   const [manualTeacherColId, setManualTeacherColId] = useState<string>('');
   const [importing, setImporting] = useState(false);
   
-  // For editing task name
+  // For editing task details
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTaskName, setEditTaskName] = useState('');
+  const [editTaskDate, setEditTaskDate] = useState('');
+  const [editTaskNote, setEditTaskNote] = useState('');
 
   // Filter state
   const [filterSubject, setFilterSubject] = useState<string>('All');
@@ -57,6 +59,11 @@ export default function ReconcilePage() {
         loadData(savedName);
       } else {
         setLoading(false);
+      }
+
+      const savedFilter = localStorage.getItem('hw_filter_subject');
+      if (savedFilter) {
+        setFilterSubject(savedFilter);
       }
     };
     init();
@@ -112,8 +119,11 @@ export default function ReconcilePage() {
   }, [childTasks, filterSubject]);
 
   const filteredTeacherCols = useMemo(() => {
-    if (filterSubject === 'All') return teacherCols;
-    return teacherCols.filter(c => c.subject === filterSubject);
+    let cols = teacherCols;
+    if (filterSubject !== 'All') {
+      cols = teacherCols.filter(c => c.subject === filterSubject);
+    }
+    return [...cols].sort((a, b) => (b.sequence || 0) - (a.sequence || 0));
   }, [teacherCols, filterSubject]);
 
   const pendingTasks = filteredChildTasks.filter(t => t.status === 'Submitted' && !t.teacher_column_id);
@@ -158,15 +168,31 @@ export default function ReconcilePage() {
     }
   };
 
-  const handleUpdateName = async (taskId: string) => {
+  const handleUpdateTask = async (taskId: string) => {
     if (!editTaskName.trim()) return;
     try {
-      setChildTasks(childTasks.map(t => t.id === taskId ? { ...t, task_name: editTaskName } : t));
-      await updateChildTask(taskId, { task_name: editTaskName });
+      const updates = { 
+        task_name: editTaskName.trim(), 
+        date: editTaskDate, 
+        note: editTaskNote 
+      };
+      setChildTasks(childTasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+      await updateChildTask(taskId, updates);
       setEditingTaskId(null);
     } catch (error) {
-      console.error('Update name error:', error);
+      console.error('Update task error:', error);
       loadData(studentName!);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!studentName || !window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบงานนี้?')) return;
+    try {
+      setChildTasks(childTasks.filter(t => t.id !== taskId));
+      await deleteChildTask(taskId);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      loadData(studentName);
     }
   };
 
@@ -205,20 +231,6 @@ export default function ReconcilePage() {
             <RefreshCcw className={clsx("w-4 h-4 sm:w-5 sm:h-5 mr-2", syncing && "animate-spin")} />
             {syncing ? 'กำลังดึง...' : 'อัปเดตข้อมูลจากครู'}
           </button>
-
-          <div className="flex-1 sm:flex-none flex items-center bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
-            <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
-            <select
-              value={filterSubject}
-              onChange={(e) => setFilterSubject(e.target.value)}
-              className="text-sm sm:text-base border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium cursor-pointer w-full"
-            >
-              <option value="All">ทุกวิชา</option>
-              {uniqueSubjects.map(sub => (
-                <option key={sub} value={sub}>{sub}</option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -227,6 +239,30 @@ export default function ReconcilePage() {
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
         </div>
       ) : (
+        <>
+        {/* Filter by Subject */}
+        {(childTasks.length > 0 || teacherCols.length > 0) && (
+          <div className="flex items-center justify-end mb-4">
+            <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2">
+              <Filter className="w-4 h-4 text-gray-400 mr-2" />
+              <select
+                value={filterSubject}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterSubject(val);
+                  localStorage.setItem('hw_filter_subject', val);
+                }}
+                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium cursor-pointer"
+              >
+                <option value="All">ทุกวิชา</option>
+                {uniqueSubjects.map(sub => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
           <div className="space-y-4">
@@ -247,43 +283,83 @@ export default function ReconcilePage() {
 
                 return (
                   <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:border-indigo-300 transition-colors group">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1 pr-4">
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md mb-2 inline-block">{task.subject}</span>
-                        {editingTaskId === task.id ? (
-                          <div className="flex flex-col mt-1">
-                            <textarea
-                              value={editTaskName}
-                              onChange={(e) => setEditTaskName(e.target.value)}
-                              className="w-full text-sm font-semibold text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-                              rows={2}
-                              autoFocus
-                            />
-                            <div className="flex justify-end gap-2 mt-2">
-                              <button onClick={() => setEditingTaskId(null)} className="flex items-center text-xs text-gray-500 hover:text-gray-700 bg-gray-100 px-2 py-1 rounded">
-                                <X className="w-3 h-3 mr-1" /> ยกเลิก
-                              </button>
-                              <button onClick={() => handleUpdateName(task.id!)} className="flex items-center text-xs text-white bg-green-500 hover:bg-green-600 px-2 py-1 rounded">
-                                <Save className="w-3 h-3 mr-1" /> บันทึก
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-start">
-                            <h3 className="font-semibold text-gray-900">{task.task_name}</h3>
+                    <div className="mb-3">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{task.subject}</span>
+                        {editingTaskId !== task.id && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button 
                               onClick={() => {
                                 setEditingTaskId(task.id!);
                                 setEditTaskName(task.task_name);
+                                setEditTaskDate(task.date || '');
+                                setEditTaskNote(task.note || '');
                               }}
-                              className="ml-2 mt-0.5 text-gray-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                              title="แก้ไขชื่องาน"
+                              className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
+                              title="แก้ไขงาน"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteTask(task.id!)}
+                              className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
+                              title="ลบงาน"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         )}
                       </div>
+                      
+                      {editingTaskId === task.id ? (
+                        <div className="mb-2">
+                          <textarea
+                            value={editTaskName}
+                            onChange={(e) => setEditTaskName(e.target.value)}
+                            className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-2"
+                            rows={2}
+                            autoFocus
+                          />
+                          <input 
+                            type="date"
+                            value={editTaskDate}
+                            onChange={(e) => setEditTaskDate(e.target.value)}
+                            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <input 
+                            type="text"
+                            value={editTaskNote}
+                            onChange={(e) => setEditTaskNote(e.target.value)}
+                            placeholder="โน้ตเพิ่มเติม..."
+                            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <div className="flex justify-end gap-1 mt-2">
+                            <button onClick={() => setEditingTaskId(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                              <X className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleUpdateTask(task.id!)} className="p-1 text-green-600 hover:text-green-700">
+                              <Save className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mb-2">
+                          <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
+                          {(task.date || task.note) && (
+                            <div className="flex items-center mt-1 space-x-2">
+                              {task.date && <p className="text-xs text-gray-400">{task.date}</p>}
+                              {task.note && (
+                                <div className="relative group/note cursor-help flex items-center">
+                                  <StickyNote className="w-3.5 h-3.5 text-yellow-500" />
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
+                                    {task.note}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {recommendations.length > 0 && (
@@ -332,7 +408,7 @@ export default function ReconcilePage() {
                             <option value="" disabled>-- เลือกงาน --</option>
                             {filteredTeacherCols.map(col => (
                               <option key={col.id} value={col.id}>
-                                [{col.subject}] {col.column_name} {col.is_checked ? '(✓)' : ''}
+                                [{col.subject}] {col.sequence ? col.sequence + '. ' : ''}{col.column_name} {col.is_checked ? '(✓)' : ''}
                               </option>
                             ))}
                           </select>
@@ -379,14 +455,89 @@ export default function ReconcilePage() {
                   {mappedTasks.map(task => {
                     const linkedCol = teacherCols.find(c => c.id === task.teacher_column_id);
                     return (
-                      <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 relative overflow-hidden transition-all hover:shadow-md">
+                      <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 relative overflow-hidden transition-all hover:shadow-md group">
                         <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] sm:text-xs font-bold px-3 py-1 rounded-bl-xl shadow-sm">
                           รอครูอัปเดตชีต
                         </div>
                         <div className="mb-4 pr-24">
-                          <div className="text-xs font-bold text-indigo-600 mb-1">{task.subject}</div>
-                          <p className="text-sm sm:text-base font-medium text-gray-900 leading-snug">{task.task_name}</p>
-                          <div className="text-xs text-gray-500 mt-2.5 bg-gray-50 inline-flex items-center px-2.5 py-1.5 rounded-lg border border-gray-100">
+                          <div className="flex justify-between items-start mb-1">
+                            <div className="text-xs font-bold text-indigo-600">{task.subject}</div>
+                            {editingTaskId !== task.id && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => {
+                                    setEditingTaskId(task.id!);
+                                    setEditTaskName(task.task_name);
+                                    setEditTaskDate(task.date || '');
+                                    setEditTaskNote(task.note || '');
+                                  }}
+                                  className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
+                                  title="แก้ไขงาน"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteTask(task.id!)}
+                                  className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
+                                  title="ลบงาน"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {editingTaskId === task.id ? (
+                            <div className="mb-2">
+                              <textarea
+                                value={editTaskName}
+                                onChange={(e) => setEditTaskName(e.target.value)}
+                                className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-2"
+                                rows={2}
+                                autoFocus
+                              />
+                              <input 
+                                type="date"
+                                value={editTaskDate}
+                                onChange={(e) => setEditTaskDate(e.target.value)}
+                                className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                              <input 
+                                type="text"
+                                value={editTaskNote}
+                                onChange={(e) => setEditTaskNote(e.target.value)}
+                                placeholder="โน้ตเพิ่มเติม..."
+                                className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                              <div className="flex justify-end gap-1 mt-2">
+                                <button onClick={() => setEditingTaskId(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                                  <X className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleUpdateTask(task.id!)} className="p-1 text-green-600 hover:text-green-700">
+                                  <Save className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mb-2">
+                              <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
+                              {(task.date || task.note) && (
+                                <div className="flex items-center mt-1 space-x-2">
+                                  {task.date && <p className="text-xs text-gray-400">{task.date}</p>}
+                                  {task.note && (
+                                    <div className="relative group/note cursor-help flex items-center">
+                                      <StickyNote className="w-3.5 h-3.5 text-yellow-500" />
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
+                                        {task.note}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          <div className="text-xs text-gray-500 mt-1 bg-gray-50 inline-flex items-center px-2.5 py-1.5 rounded-lg border border-gray-100">
                             <ArrowRightLeft className="w-3 h-3 mr-1.5 text-indigo-400" /> จากครู: {linkedCol?.column_name || 'ไม่ทราบชื่อ'}
                           </div>
                         </div>
@@ -430,7 +581,7 @@ export default function ReconcilePage() {
                       <tr key={col.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="text-xs font-semibold text-indigo-600 mb-0.5">{col.subject}</div>
-                          <div className="text-sm text-gray-900 font-medium">{col.column_name}</div>
+                          <div className="text-sm text-gray-900 font-medium">{col.sequence ? col.sequence + '. ' : ''}{col.column_name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           {col.is_checked ? (
@@ -459,6 +610,7 @@ export default function ReconcilePage() {
           </div>
 
         </div>
+        </>
       )}
     </div>
   );

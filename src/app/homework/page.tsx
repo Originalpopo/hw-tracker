@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud } from 'lucide-react';
+import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud, StickyNote } from 'lucide-react';
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -25,6 +25,8 @@ function HomeworkDashboard() {
   const [newTaskName, setNewTaskName] = useState('');
   const [newSubject, setNewSubject] = useState(DEFAULT_SUBJECTS[0]);
   const [customSubject, setCustomSubject] = useState('');
+  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newNote, setNewNote] = useState('');
   const [importing, setImporting] = useState(false);
 
   // Filter state
@@ -46,6 +48,15 @@ function HomeworkDashboard() {
         loadTasks(savedName);
       } else {
         setLoading(false);
+      }
+
+      const savedFilter = localStorage.getItem('hw_filter_subject');
+      const urlSubject = searchParams.get('subject');
+      if (urlSubject) {
+        setFilterSubject(urlSubject);
+        localStorage.setItem('hw_filter_subject', urlSubject);
+      } else if (savedFilter) {
+        setFilterSubject(savedFilter);
       }
     };
     init();
@@ -82,9 +93,13 @@ function HomeworkDashboard() {
         status: 'Todo',
         teacher_column_id: null,
         student_name: studentName,
+        date: newDate,
+        note: newNote.trim()
       });
       setNewTaskName('');
       setCustomSubject('');
+      setNewDate(new Date().toISOString().split('T')[0]);
+      setNewNote('');
       setIsAdding(false);
       loadTasks(studentName);
     } catch (error) {
@@ -96,12 +111,12 @@ function HomeworkDashboard() {
   const handleUpdateStatus = async (taskId: string, newStatus: TaskStatus) => {
     if (!studentName) return;
     try {
-      if (newStatus === 'Done') {
+      if (newStatus === 'Done' || newStatus === 'Submitted') {
         confetti({
-          particleCount: 40,
-          spread: 60,
+          particleCount: 50,
+          spread: 70,
           origin: { y: 0.7 },
-          colors: ['#22c55e', '#eab308', '#3b82f6']
+          colors: ['#22c55e', '#eab308', '#3b82f6', '#8b5cf6']
         });
       }
 
@@ -115,13 +130,13 @@ function HomeworkDashboard() {
     }
   };
 
-  const handleUpdateName = async (taskId: string, newName: string) => {
-    if (!studentName || !newName.trim()) return;
+  const handleUpdateTask = async (taskId: string, updates: Partial<ChildTask>) => {
+    if (!studentName) return;
     try {
-      setTasks(tasks.map(t => t.id === taskId ? { ...t, task_name: newName.trim() } : t));
-      await updateChildTask(taskId, { task_name: newName.trim() });
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+      await updateChildTask(taskId, updates);
     } catch (error) {
-      console.error('Error updating name:', error);
+      console.error('Error updating task:', error);
       loadTasks(studentName);
     }
   };
@@ -145,7 +160,7 @@ function HomeworkDashboard() {
       for (const col of missingCols) {
         await addChildTask({
           subject: col.subject,
-          task_name: `[จากครู] ${col.column_name}`,
+          task_name: `[จากครู] ${col.sequence ? col.sequence + '. ' : ''}${col.column_name}`,
           status: col.is_checked ? 'Verified' : 'Todo',
           teacher_column_id: col.id,
           student_name: studentName
@@ -212,9 +227,34 @@ function HomeworkDashboard() {
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
-    if (filterSubject === 'All') return tasks;
-    return tasks.filter(t => t.subject === filterSubject);
-  }, [tasks, filterSubject]);
+    let result = tasks;
+    if (filterSubject !== 'All') {
+      result = tasks.filter(t => t.subject === filterSubject);
+    }
+    
+    // Sort tasks by sequence ascending (น้อยไปมาก)
+    return [...result].sort((a, b) => {
+      let seqA = Infinity;
+      let seqB = Infinity;
+      
+      if (a.teacher_column_id) {
+        const colA = teacherCols.find(c => c.id === a.teacher_column_id);
+        if (colA && typeof colA.sequence === 'number') seqA = colA.sequence;
+      }
+      if (b.teacher_column_id) {
+        const colB = teacherCols.find(c => c.id === b.teacher_column_id);
+        if (colB && typeof colB.sequence === 'number') seqB = colB.sequence;
+      }
+      
+      if (seqA === seqB) {
+        // Fallback to created_at descending if sequences are the same
+        const timeA = (a.created_at as any)?.toMillis?.() || 0;
+        const timeB = (b.created_at as any)?.toMillis?.() || 0;
+        return timeB - timeA;
+      }
+      return seqA - seqB;
+    });
+  }, [tasks, filterSubject, teacherCols]);
 
   if (!studentName) {
     return (
@@ -301,6 +341,26 @@ function HomeworkDashboard() {
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder:text-gray-400"
               />
             </div>
+            
+            <div className="sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่</label>
+              <input 
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note (รายละเอียดเพิ่มเติม)</label>
+              <input 
+                type="text" 
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="โน้ตสั้นๆ (ถ้ามี)..."
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder:text-gray-400"
+              />
+            </div>
           </div>
           <div className="mt-4 flex justify-end">
             <button type="submit" className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm flex items-center">
@@ -331,7 +391,11 @@ function HomeworkDashboard() {
               <Filter className="w-4 h-4 text-gray-400 mr-2" />
               <select
                 value={filterSubject}
-                onChange={(e) => setFilterSubject(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterSubject(val);
+                  localStorage.setItem('hw_filter_subject', val);
+                }}
                 className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium"
               >
                 <option value="All">ทุกวิชา ({tasks.length})</option>
@@ -354,7 +418,7 @@ function HomeworkDashboard() {
             headerColor="bg-gray-100"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 active:scale-95 transition-all">
                     เริ่มทำ
@@ -374,7 +438,7 @@ function HomeworkDashboard() {
             headerColor="bg-blue-100/50"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 active:scale-95 transition-all">
                     ทำเสร็จแล้ว
@@ -397,7 +461,7 @@ function HomeworkDashboard() {
             headerColor="bg-green-100/50"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateName={handleUpdateName} onDelete={handleDelete}>
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center">
                     <Send className="w-3 h-3 mr-1.5" /> ส่งครูแล้ว
@@ -461,13 +525,16 @@ function TaskColumn({ title, icon, tasks, children, bgColor, borderColor, header
   );
 }
 
-function TaskCard({ task, children, onUpdateName, onDelete }: any) {
+function TaskCard({ task, children, onUpdateTask, onDelete }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(task.task_name);
+  const [editDate, setEditDate] = useState(task.date || '');
+  const [editNote, setEditNote] = useState(task.note || '');
 
   const handleSaveEdit = () => {
-    if (editName.trim() && editName !== task.task_name) {
-      onUpdateName(task.id, editName);
+    const trimmedName = editName.trim();
+    if (trimmedName && (trimmedName !== task.task_name || editDate !== task.date || editNote !== task.note)) {
+      onUpdateTask(task.id, { task_name: trimmedName, date: editDate, note: editNote });
     }
     setIsEditing(false);
   };
@@ -506,12 +573,25 @@ function TaskCard({ task, children, onUpdateName, onDelete }: any) {
           <textarea
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
-            className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-2"
             rows={2}
             autoFocus
           />
-          <div className="flex justify-end gap-1 mt-1">
-            <button onClick={() => { setIsEditing(false); setEditName(task.task_name); }} className="p-1 text-gray-400 hover:text-gray-600">
+          <input 
+            type="date"
+            value={editDate}
+            onChange={(e) => setEditDate(e.target.value)}
+            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <input 
+            type="text"
+            value={editNote}
+            onChange={(e) => setEditNote(e.target.value)}
+            placeholder="โน้ตเพิ่มเติม..."
+            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <div className="flex justify-end gap-1 mt-2">
+            <button onClick={() => { setIsEditing(false); setEditName(task.task_name); setEditDate(task.date || ''); setEditNote(task.note || ''); }} className="p-1 text-gray-400 hover:text-gray-600">
               <X className="w-4 h-4" />
             </button>
             <button onClick={handleSaveEdit} className="p-1 text-green-600 hover:text-green-700">
@@ -520,7 +600,24 @@ function TaskCard({ task, children, onUpdateName, onDelete }: any) {
           </div>
         </div>
       ) : (
-        <p className="text-sm font-medium text-gray-900 mb-2 line-clamp-2">{task.task_name}</p>
+        <div className="mb-2">
+          <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
+          {(task.date || task.note) && (
+            <div className="flex items-center mt-1 space-x-2">
+              {task.date && (
+                <p className="text-xs text-gray-400">{task.date}</p>
+              )}
+              {task.note && (
+                <div className="relative group/note cursor-help flex items-center">
+                  <StickyNote className="w-3.5 h-3.5 text-yellow-500" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
+                    {task.note}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
       
       {children}

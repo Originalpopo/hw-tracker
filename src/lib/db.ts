@@ -27,6 +27,8 @@ export interface ChildTask {
   updated_at: Timestamp | Date;
   teacher_column_id: string | null;
   student_name: string; // The child's name for filtering
+  date?: string; // Date of the task (e.g., YYYY-MM-DD)
+  note?: string; // Additional details for the task
 }
 
 export interface TeacherColumn {
@@ -36,6 +38,7 @@ export interface TeacherColumn {
   is_checked: boolean;
   last_synced: Timestamp | Date;
   student_name: string; // The child's name for filtering
+  sequence?: number; // Order index from Google Sheet
 }
 
 // --- Collections ---

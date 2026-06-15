@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent } from '@/lib/db';
+import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -31,6 +31,28 @@ export async function POST(request: Request) {
     // Save to Firestore
     for (const col of allTeacherCols) {
       await syncTeacherColumn(col);
+    }
+
+    // Update ChildTasks statuses based on synced columns
+    try {
+      const childTasks = await getChildTasks(studentName);
+      for (const task of childTasks) {
+        if (task.teacher_column_id && task.id) {
+          const linkedCol = allTeacherCols.find(c => c.id === task.teacher_column_id);
+          if (linkedCol) {
+            // If teacher checked it, but child task is not Verified, update it
+            if (linkedCol.is_checked && task.status !== 'Verified') {
+              await updateChildTaskStatus(task.id, 'Verified');
+            }
+            // If teacher unchecked it, but child task is Verified, update to Rework
+            else if (!linkedCol.is_checked && task.status === 'Verified') {
+              await updateChildTaskStatus(task.id, 'Rework');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error updating child tasks statuses:', e);
     }
 
     return NextResponse.json({ success: true, count: allTeacherCols.length, columns: allTeacherCols });
