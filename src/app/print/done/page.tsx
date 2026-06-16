@@ -116,7 +116,7 @@ export default function PrintDonePage() {
               <table key={subject} className="w-full border-collapse border border-black text-sm">
                 <thead>
                   <tr>
-                    <th className="bg-gray-200 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
+                    <th className="bg-blue-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
                       {subject}
                     </th>
                   </tr>

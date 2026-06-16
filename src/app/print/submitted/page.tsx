@@ -84,8 +84,8 @@ export default function PrintSubmittedPage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-purple-50 p-4 rounded-xl border border-purple-100 gap-4">
-        <Link href="/print" className="flex items-center text-purple-600 hover:text-purple-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-purple-200">
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-green-50 p-4 rounded-xl border border-green-100 gap-4">
+        <Link href="/print" className="flex items-center text-green-600 hover:text-green-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-green-200">
           <ArrowLeft className="w-5 h-5 mr-2" />
           กลับหน้าพิมพ์
         </Link>
@@ -93,7 +93,7 @@ export default function PrintSubmittedPage() {
           <div className="text-gray-600 text-sm hidden sm:block">
             💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm">
+          <button onClick={() => window.print()} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 shadow-sm">
             <Printer className="w-5 h-5 mr-2" />
             พิมพ์อีกครั้ง
           </button>
@@ -116,7 +116,7 @@ export default function PrintSubmittedPage() {
               <table key={subject} className="w-full border-collapse border border-black text-sm">
                 <thead>
                   <tr>
-                    <th className="bg-gray-200 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
+                    <th className="bg-green-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
                       {subject}
                     </th>
                   </tr>

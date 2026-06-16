@@ -34,8 +34,8 @@ export default function PrintInProgressPage() {
   const loadData = async (name: string) => {
     try {
       const allTasks = await getChildTasks(name);
-      // Filter only tasks that are 'In Progress' (กำลังทำ)
-      const filteredTasks = allTasks.filter(t => t.status === 'In Progress');
+      // Filter only tasks that are 'In Progress' (กำลังทำ) or 'Todo' (ยังไม่ทำ)
+      const filteredTasks = allTasks.filter(t => t.status === 'In Progress' || t.status === 'Todo');
       setInProgressTasks(filteredTasks);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -52,13 +52,22 @@ export default function PrintInProgressPage() {
     return <div className="p-8 text-center">กรุณาตั้งค่าชื่อนักเรียนก่อน</div>;
   }
 
-  // Group by subject
-  const groupedTasks: Record<string, ChildTask[]> = {};
+  // Group by status then subject
+  const inProgressGrouped: Record<string, ChildTask[]> = {};
+  const todoGrouped: Record<string, ChildTask[]> = {};
+
   inProgressTasks.forEach(task => {
-    if (!groupedTasks[task.subject]) {
-      groupedTasks[task.subject] = [];
+    if (task.status === 'In Progress') {
+      if (!inProgressGrouped[task.subject]) {
+        inProgressGrouped[task.subject] = [];
+      }
+      inProgressGrouped[task.subject].push(task);
+    } else if (task.status === 'Todo') {
+      if (!todoGrouped[task.subject]) {
+        todoGrouped[task.subject] = [];
+      }
+      todoGrouped[task.subject].push(task);
     }
-    groupedTasks[task.subject].push(task);
   });
 
   return (
@@ -84,8 +93,8 @@ export default function PrintInProgressPage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100 gap-4">
-        <Link href="/print" className="flex items-center text-blue-600 hover:text-blue-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-blue-200">
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-orange-50 p-4 rounded-xl border border-orange-100 gap-4">
+        <Link href="/print" className="flex items-center text-orange-600 hover:text-orange-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-orange-200">
           <ArrowLeft className="w-5 h-5 mr-2" />
           กลับหน้าพิมพ์
         </Link>
@@ -93,7 +102,7 @@ export default function PrintInProgressPage() {
           <div className="text-gray-600 text-sm hidden sm:block">
             💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm">
+          <button onClick={() => window.print()} className="flex items-center bg-orange-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-700 shadow-sm">
             <Printer className="w-5 h-5 mr-2" />
             พิมพ์อีกครั้ง
           </button>
@@ -103,38 +112,72 @@ export default function PrintInProgressPage() {
       {/* Print Layout */}
       <div className="w-full max-w-[210mm] mx-auto bg-white text-black print:p-0">
         <h1 className="text-2xl font-bold text-center mb-6 border-b-2 border-black pb-4">
-          ใบงานที่กำลังทำ - {studentName}
+          ใบงานที่กำลังทำ / ยังไม่ทำ - {studentName}
         </h1>
 
-        {Object.keys(groupedTasks).length === 0 ? (
+        {Object.keys(inProgressGrouped).length === 0 && Object.keys(todoGrouped).length === 0 ? (
           <div className="text-center py-10 border border-dashed border-gray-300 rounded-lg text-gray-500">
-            ไม่มีงานที่กำลังทำอยู่ตอนนี้
+            ไม่มีงานที่กำลังทำหรือยังไม่ทำอยู่ตอนนี้
           </div>
         ) : (
-          <div className="space-y-6">
-            {Object.entries(groupedTasks).map(([subject, tasks]) => (
-              <table key={subject} className="w-full border-collapse border border-black text-sm">
-                <thead>
-                  <tr>
-                    <th className="bg-gray-200 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
-                      {subject}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((task) => (
-                    <tr key={task.id}>
-                      <td className="border border-black py-2.5 px-3 align-top leading-tight w-full">
-                        {task.task_name}
-                      </td>
-                      <td className="border border-black w-16 text-center align-middle p-2">
-                        <div className="w-6 h-6 border-2 border-black mx-auto"></div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ))}
+          <div className="space-y-8">
+            {Object.keys(inProgressGrouped).length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold border-b border-gray-300 pb-2">กำลังทำ</h2>
+                {Object.entries(inProgressGrouped).map(([subject, tasks]) => (
+                  <table key={subject} className="w-full border-collapse border border-black text-sm">
+                    <thead>
+                      <tr>
+                        <th className="bg-orange-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
+                          {subject}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map((task) => (
+                        <tr key={task.id}>
+                          <td className="border border-black py-2.5 px-3 align-top leading-tight w-full">
+                            {task.task_name}
+                          </td>
+                          <td className="border border-black w-16 text-center align-middle p-2">
+                            <div className="w-6 h-6 border-2 border-black mx-auto"></div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ))}
+              </div>
+            )}
+            
+            {Object.keys(todoGrouped).length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold border-b border-gray-300 pb-2">ยังไม่ทำ</h2>
+                {Object.entries(todoGrouped).map(([subject, tasks]) => (
+                  <table key={subject} className="w-full border-collapse border border-black text-sm">
+                    <thead>
+                      <tr>
+                        <th className="bg-red-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
+                          {subject}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map((task) => (
+                        <tr key={task.id}>
+                          <td className="border border-black py-2.5 px-3 align-top leading-tight w-full">
+                            {task.task_name}
+                          </td>
+                          <td className="border border-black w-16 text-center align-middle p-2">
+                            <div className="w-6 h-6 border-2 border-black mx-auto"></div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -86,8 +86,8 @@ export default function PrintPage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100 gap-4">
-        <Link href="/print" className="flex items-center text-blue-600 hover:text-blue-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-blue-200">
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100 gap-4">
+        <Link href="/print" className="flex items-center text-gray-600 hover:text-gray-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-200">
           <ArrowLeft className="w-5 h-5 mr-2" />
           กลับหน้าพิมพ์
         </Link>
@@ -95,7 +95,7 @@ export default function PrintPage() {
           <div className="text-gray-600 text-sm hidden sm:block">
             💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm">
+          <button onClick={() => window.print()} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-700 shadow-sm">
             <Printer className="w-5 h-5 mr-2" />
             พิมพ์อีกครั้ง
           </button>
