@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud, StickyNote } from 'lucide-react';
+import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud, StickyNote, RotateCcw } from 'lucide-react';
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -273,13 +273,13 @@ function HomeworkDashboard() {
 
   // Filter tasks that are not Verified (to keep dashboard clean)
   // or maybe group them by status
-  const activeTasks = tasks.filter(t => t.status !== 'Verified' && t.status !== 'Submitted');
+  const activeTasks = tasks.filter(t => t.status !== 'Verified');
   
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
             <Sparkles className="w-6 h-6 text-yellow-400 mr-2 shrink-0" />
@@ -291,7 +291,7 @@ function HomeworkDashboard() {
           <button
             onClick={handleImportMissing}
             disabled={importing || teacherCols.length === 0}
-            className="w-full sm:w-auto flex items-center justify-center bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium hover:bg-emerald-100 hover:text-emerald-800 transition-all active:scale-95 disabled:opacity-50"
+            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 rounded-xl font-medium hover:bg-emerald-100 hover:text-emerald-800 transition-all active:scale-95 disabled:opacity-50"
             title="ดึงงานครูที่เหลือ มาเพิ่มอัตโนมัติ"
           >
             <DownloadCloud className={clsx("w-5 h-5 mr-1.5", importing && "animate-bounce")} />
@@ -299,10 +299,31 @@ function HomeworkDashboard() {
           </button>
           <button
             onClick={() => setIsAdding(!isAdding)}
-            className="w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 hover:shadow-md transition-all active:scale-95"
+            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white px-5 rounded-xl font-medium hover:bg-indigo-700 hover:shadow-md transition-all active:scale-95"
           >
             {isAdding ? 'ยกเลิก' : <><Plus className="w-5 h-5 mr-1" /> เพิ่มงานเอง</>}
           </button>
+
+          {/* Filter by Subject */}
+          {tasks.length > 0 && (
+            <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm px-3 h-[44px] w-full sm:w-auto">
+              <Filter className="w-4 h-4 text-gray-400 mr-2" />
+              <select
+                value={filterSubject}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterSubject(val);
+                  localStorage.setItem('hw_filter_subject', val);
+                }}
+                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full"
+              >
+                <option value="All">ทุกวิชา ({tasks.length})</option>
+                {uniqueSubjects.map(sub => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -384,30 +405,7 @@ function HomeworkDashboard() {
         </div>
       ) : (
         <>
-        {/* Filter by Subject */}
-        {tasks.length > 0 && (
-          <div className="flex items-center justify-end mb-4">
-            <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2">
-              <Filter className="w-4 h-4 text-gray-400 mr-2" />
-              <select
-                value={filterSubject}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setFilterSubject(val);
-                  localStorage.setItem('hw_filter_subject', val);
-                }}
-                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium"
-              >
-                <option value="All">ทุกวิชา ({tasks.length})</option>
-                {uniqueSubjects.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {/* TODO Column */}
           <TaskColumn 
             title="ยังไม่ทำ" 
@@ -420,7 +418,7 @@ function HomeworkDashboard() {
             {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 active:scale-95 transition-all">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-100 active:scale-95 transition-all">
                     เริ่มทำ
                   </button>
                 </div>
@@ -431,20 +429,17 @@ function HomeworkDashboard() {
           {/* IN PROGRESS Column */}
           <TaskColumn 
             title="กำลังทำ" 
-            icon={<Clock className="w-5 h-5 text-blue-500" />}
+            icon={<Clock className="w-5 h-5 text-orange-500" />}
             tasks={filteredTasks.filter(t => t.status === 'In Progress')}
-            bgColor="bg-blue-50/50"
-            borderColor="border-blue-100"
-            headerColor="bg-blue-100/50"
+            bgColor="bg-orange-50/50"
+            borderColor="border-orange-100"
+            headerColor="bg-orange-100/50"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 active:scale-95 transition-all">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 active:scale-95 transition-all">
                     ทำเสร็จแล้ว
-                  </button>
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Todo')} className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 active:scale-95 transition-all">
-                    พักไว้
                   </button>
                 </div>
               </TaskCard>
@@ -454,36 +449,51 @@ function HomeworkDashboard() {
           {/* DONE Column */}
           <TaskColumn 
             title="ทำเสร็จ (รอส่ง)" 
-            icon={<CheckCircle className="w-5 h-5 text-green-500" />}
+            icon={<CheckCircle className="w-5 h-5 text-blue-500" />}
             tasks={filteredTasks.filter(t => t.status === 'Done')}
-            bgColor="bg-green-50/50"
-            borderColor="border-green-100"
-            headerColor="bg-green-100/50"
+            bgColor="bg-blue-50/50"
+            borderColor="border-blue-100"
+            headerColor="bg-blue-100/50"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'In Progress')}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center">
+                  <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 active:scale-95 transition-all flex items-center justify-center">
                     <Send className="w-3 h-3 mr-1.5" /> ส่งครูแล้ว
                   </button>
                 </div>
               </TaskCard>
             )}
           </TaskColumn>
+
+          {/* SUBMITTED Column */}
+          <TaskColumn 
+            title="ตรวจแล้ว(รอครูอับเดท)" 
+            icon={<Send className="w-5 h-5 text-green-500" />}
+            tasks={filteredTasks.filter(t => t.status === 'Submitted')}
+            bgColor="bg-green-50/50"
+            borderColor="border-green-100"
+            headerColor="bg-green-100/50"
+          >
+            {(task: ChildTask) => (
+              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Done')}>
+                <div className="mt-3 mb-1">
+                  {task.teacher_column_id ? (
+                    <span className="text-[10px] sm:text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                      จับคู่แล้ว: รอครูอัปเดต
+                    </span>
+                  ) : (
+                    <Link href="/reconcile" className="inline-block text-[10px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition-colors cursor-pointer active:scale-95">
+                      รอคุณจับคู่งาน ➔
+                    </Link>
+                  )}
+                </div>
+              </TaskCard>
+            )}
+          </TaskColumn>
         </div>
         
-        {/* Danger Zone */}
-        {tasks.length > 0 && (
-          <div className="mt-12 pt-6 border-t border-gray-200 flex justify-center">
-            <button
-              onClick={handleClearAll}
-              className="flex items-center text-sm text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              {filterSubject === 'All' ? 'ล้างข้อมูลการบ้านทั้งหมด (เริ่มใหม่)' : `ล้างข้อมูลเฉพาะวิชา ${filterSubject}`}
-            </button>
-          </div>
-        )}
+
         </>
       )}
     </div>
@@ -525,7 +535,7 @@ function TaskColumn({ title, icon, tasks, children, bgColor, borderColor, header
   );
 }
 
-function TaskCard({ task, children, onUpdateTask, onDelete }: any) {
+function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(task.task_name);
   const [editDate, setEditDate] = useState(task.date || '');
@@ -549,7 +559,16 @@ function TaskCard({ task, children, onUpdateTask, onDelete }: any) {
       <div className="flex justify-between items-start mb-1">
         <div className="text-xs font-semibold text-indigo-600">{task.subject}</div>
         {!isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white pl-1">
+            {onUndo && (
+              <button 
+                onClick={() => onUndo(task)}
+                className="text-gray-400 hover:text-orange-600 p-1 rounded hover:bg-orange-50"
+                title="ดึงกลับมา"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button 
               onClick={() => setIsEditing(true)}
               className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"

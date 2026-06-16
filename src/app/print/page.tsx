@@ -4,7 +4,7 @@ import { Printer, CalendarClock, CheckCircle, Zap, Clock } from 'lucide-react';
 export default function PrintHubPage() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 max-w-4xl mx-auto">
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 text-center">
+      <div className="bg-white rounded-3xl p-8 text-center">
         <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
           <Printer className="w-10 h-10 text-blue-600" />
         </div>

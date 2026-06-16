@@ -227,7 +227,7 @@ export default function ReconcilePage() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100 gap-4 md:gap-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 sm:p-6 rounded-2xl gap-4 md:gap-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
             <LinkIcon className="w-6 h-6 text-indigo-600 mr-2 shrink-0" />
@@ -235,15 +235,36 @@ export default function ReconcilePage() {
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">จับคู่งานของลูกกับข้อมูลจากครู เพื่อยืนยันความถูกต้อง</p>
         </div>
-        <div className="flex flex-row flex-wrap sm:flex-nowrap items-center gap-3 w-full md:w-auto md:shrink-0 justify-start md:justify-end">
+        <div className="flex flex-col sm:flex-row flex-wrap sm:flex-nowrap items-center gap-3 w-full md:w-auto md:shrink-0 justify-start md:justify-end mt-4 md:mt-0">
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex-1 sm:flex-none flex items-center justify-center bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-xl text-sm sm:text-base font-medium hover:bg-gray-50 hover:text-indigo-600 transition-all active:scale-95 whitespace-nowrap"
+            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-white border border-gray-300 text-gray-700 px-4 rounded-xl text-sm sm:text-base font-medium hover:bg-gray-50 hover:text-indigo-600 transition-all active:scale-95 whitespace-nowrap"
           >
             <RefreshCcw className={clsx("w-4 h-4 sm:w-5 sm:h-5 mr-2", syncing && "animate-spin")} />
             {syncing ? 'กำลังดึง...' : 'อัปเดตข้อมูลจากครู'}
           </button>
+
+          {/* Filter by Subject */}
+          {(childTasks.length > 0 || teacherCols.length > 0) && (
+            <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm px-3 h-[44px] w-full sm:w-auto">
+              <Filter className="w-4 h-4 text-gray-400 mr-2" />
+              <select
+                value={filterSubject}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterSubject(val);
+                  localStorage.setItem('hw_filter_subject', val);
+                }}
+                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium cursor-pointer w-full"
+              >
+                <option value="All">ทุกวิชา</option>
+                {uniqueSubjects.map(sub => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -253,29 +274,6 @@ export default function ReconcilePage() {
         </div>
       ) : (
         <>
-        {/* Filter by Subject */}
-        {(childTasks.length > 0 || teacherCols.length > 0) && (
-          <div className="flex items-center justify-end mb-4">
-            <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2">
-              <Filter className="w-4 h-4 text-gray-400 mr-2" />
-              <select
-                value={filterSubject}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setFilterSubject(val);
-                  localStorage.setItem('hw_filter_subject', val);
-                }}
-                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium cursor-pointer"
-              >
-                <option value="All">ทุกวิชา</option>
-                {uniqueSubjects.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
           <div className="space-y-4">
@@ -467,115 +465,7 @@ export default function ReconcilePage() {
               })
             )}
 
-            {mappedTasks.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4 px-2">จับคู่แล้ว (รอครูตรวจ)</h3>
-                <div className="space-y-3">
-                  {mappedTasks.map(task => {
-                    const linkedCol = teacherCols.find(c => c.id === task.teacher_column_id);
-                    return (
-                      <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 relative overflow-hidden transition-all hover:shadow-md group">
-                        <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] sm:text-xs font-bold px-3 py-1 rounded-bl-xl shadow-sm">
-                          รอครูอัปเดตชีต
-                        </div>
-                        <div className="mb-4 pr-24">
-                          <div className="flex justify-between items-start mb-1">
-                            <div className="text-xs font-bold text-indigo-600">{task.subject}</div>
-                            {editingTaskId !== task.id && (
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => {
-                                    setEditingTaskId(task.id!);
-                                    setEditTaskName(task.task_name);
-                                    setEditTaskDate(task.date || '');
-                                    setEditTaskNote(task.note || '');
-                                  }}
-                                  className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
-                                  title="แก้ไขงาน"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteTask(task.id!)}
-                                  className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                  title="ลบงาน"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          
-                          {editingTaskId === task.id ? (
-                            <div className="mb-2">
-                              <textarea
-                                value={editTaskName}
-                                onChange={(e) => setEditTaskName(e.target.value)}
-                                className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-2"
-                                rows={2}
-                                autoFocus
-                              />
-                              <input 
-                                type="date"
-                                value={editTaskDate}
-                                onChange={(e) => setEditTaskDate(e.target.value)}
-                                className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                              <input 
-                                type="text"
-                                value={editTaskNote}
-                                onChange={(e) => setEditTaskNote(e.target.value)}
-                                placeholder="โน้ตเพิ่มเติม..."
-                                className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                              <div className="flex justify-end gap-1 mt-2">
-                                <button onClick={() => setEditingTaskId(null)} className="p-1 text-gray-400 hover:text-gray-600">
-                                  <X className="w-4 h-4" />
-                                </button>
-                                <button onClick={() => handleUpdateTask(task.id!)} className="p-1 text-green-600 hover:text-green-700">
-                                  <Save className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mb-2">
-                              <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
-                              {(task.date || task.note) && (
-                                <div className="flex items-center mt-1 space-x-2">
-                                  {task.date && <p className="text-xs text-gray-400">{task.date}</p>}
-                                  {task.note && (
-                                    <div className="relative group/note cursor-help flex items-center">
-                                      <StickyNote className="w-3.5 h-3.5 text-yellow-500" />
-                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
-                                        {task.note}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          <div className="text-xs text-gray-500 mt-1 bg-gray-50 inline-flex items-center px-2.5 py-1.5 rounded-lg border border-gray-100">
-                            <ArrowRightLeft className="w-3 h-3 mr-1.5 text-indigo-400" /> จากครู: {linkedCol?.column_name || 'ไม่ทราบชื่อ'}
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-end pt-3 border-t border-gray-100 mt-2">
-                          <button 
-                            onClick={() => handleReject(task.id!)} 
-                            className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all flex items-center active:scale-95 shadow-sm"
-                          >
-                            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5" />
-                            ให้ลูกแก้ใหม่
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+
 
           </div>
 

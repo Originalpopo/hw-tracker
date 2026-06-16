@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, CheckSquare, Settings, BookOpen, Flame, Printer } from 'lucide-react';
+import { Home, CheckSquare, Settings, BookOpen, Rocket, Printer } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
 
-export default function Navigation() {
+export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapsed: boolean, setIsCollapsed: (val: boolean) => void }) {
   const pathname = usePathname();
   const [studentName, setStudentName] = useState<string | null>(null);
 
@@ -29,12 +29,18 @@ export default function Navigation() {
   return (
     <>
       {/* Desktop Sidebar & Mobile Top Header wrapper */}
-      <nav className="bg-white md:fixed md:inset-y-0 md:left-0 md:w-64 md:border-r md:border-gray-200 md:shadow-none shadow-sm sticky top-0 z-10 print:hidden md:flex md:flex-col">
+      <nav className={clsx("bg-white md:fixed md:inset-y-0 md:left-0 md:border-r md:border-gray-200 md:shadow-none shadow-sm sticky top-0 z-10 print:hidden md:flex md:flex-col transition-all duration-300", isCollapsed ? "md:w-20" : "md:w-64")}>
         <div className="md:flex-1 md:flex md:flex-col md:px-4 md:py-6 h-16 md:h-auto flex items-center md:items-stretch px-4 sm:px-6">
-          <div className="flex-shrink-0 flex items-center md:mb-8">
-            <Link href="/" className="flex items-center group transition-transform active:scale-95">
-              <Flame className="w-8 h-8 text-orange-500 mr-2 group-hover:scale-110 transition-transform" />
-              <span className="text-xl md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-800 tracking-tight group-hover:opacity-80 transition-opacity">
+          <div className={clsx("flex-shrink-0 flex items-center md:mb-8 transition-all", isCollapsed ? "md:justify-center" : "")}>
+            <button 
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex items-center group transition-transform active:scale-95 cursor-pointer focus:outline-none"
+              title={isCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
+            >
+              <span className={clsx("text-3xl transition-transform group-hover:scale-110 -rotate-45 inline-block", isCollapsed ? "mr-2 md:mr-0" : "mr-2")}>🚀</span>
+            </button>
+            <Link href="/" className={clsx("flex items-center group transition-transform active:scale-95", isCollapsed ? "md:hidden" : "")}>
+              <span className="text-xl md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-800 tracking-tight group-hover:opacity-80 transition-opacity whitespace-nowrap">
                 HW Tracker
               </span>
             </Link>
@@ -63,34 +69,44 @@ export default function Navigation() {
                 <Link
                   key={item.name}
                   href={item.href}
+                  title={isCollapsed ? item.name : undefined}
                   className={clsx(
                     isActive
                       ? 'bg-blue-50 text-blue-700 font-bold'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium',
-                    'group flex items-center px-4 py-3 text-sm rounded-xl transition-all duration-200'
+                    'group flex items-center text-sm rounded-xl transition-all duration-200',
+                    isCollapsed ? 'justify-center p-3 mx-2' : 'px-4 py-3 mx-4'
                   )}
                 >
-                  <Icon className={clsx("w-5 h-5 mr-3 transition-colors", isActive ? "text-blue-600" : "text-gray-400 group-hover:text-gray-500")} />
-                  {item.name}
+                  <Icon className={clsx("w-5 h-5 transition-colors flex-shrink-0", isActive ? "text-blue-600" : "text-gray-400 group-hover:text-gray-500", !isCollapsed && "mr-3")} />
+                  {!isCollapsed && <span className="whitespace-nowrap">{item.name}</span>}
                 </Link>
               );
             })}
           </div>
 
           {/* Desktop Bottom Action Area */}
-          <div className="hidden md:block mt-auto pt-6 border-t border-gray-100">
+          <div className={clsx("hidden md:flex mt-auto pt-6 border-t border-gray-100", isCollapsed ? "justify-center pb-6" : "block")}>
             {studentName ? (
-              <div className="bg-gray-50/80 rounded-xl p-4 border border-gray-100 shadow-sm">
-                <p className="text-[11px] text-gray-500 font-semibold mb-1 uppercase tracking-wider">กำลังใช้งาน</p>
-                <strong className="text-sm text-blue-700 flex items-center">
-                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2 shadow-sm shadow-green-200"></div>
-                  <span className="truncate">{studentName}</span>
-                </strong>
-              </div>
+              isCollapsed ? (
+                <div className="w-3 h-3 bg-green-500 rounded-full shadow-sm shadow-green-200" title={`กำลังใช้งาน: ${studentName}`}></div>
+              ) : (
+                <div className="bg-gray-50/80 rounded-xl p-4 border border-gray-100 shadow-sm mx-4 mb-6 w-full">
+                  <p className="text-[11px] text-gray-500 font-semibold mb-1 uppercase tracking-wider">กำลังใช้งาน</p>
+                  <strong className="text-sm text-blue-700 flex items-center">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 shadow-sm shadow-green-200"></div>
+                    <span className="truncate">{studentName}</span>
+                  </strong>
+                </div>
+              )
             ) : (
-              <Link href="/settings" className="text-sm text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg flex justify-center transition-colors shadow-sm font-medium">
-                กรุณาตั้งค่าชื่อนักเรียน
-              </Link>
+              isCollapsed ? (
+                <Link href="/settings" className="w-3 h-3 bg-red-500 rounded-full shadow-sm shadow-red-200" title="กรุณาตั้งค่าชื่อนักเรียน"></Link>
+              ) : (
+                <Link href="/settings" className="text-sm text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg flex justify-center transition-colors shadow-sm font-medium mx-4 mb-6 w-full text-center">
+                  กรุณาตั้งค่าชื่อนักเรียน
+                </Link>
+              )
             )}
           </div>
         </div>
