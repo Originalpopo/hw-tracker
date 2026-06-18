@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCcw, Link as LinkIcon, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter, StickyNote, Trash2 } from 'lucide-react';
+import { RefreshCcw, LayoutGrid, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter, StickyNote, Trash2 } from 'lucide-react';
 import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask, getGlobalSettings, deleteChildTask } from '@/lib/db';
 import Fuse from 'fuse.js';
 import { clsx } from 'clsx';
@@ -230,7 +230,7 @@ export default function ReconcilePage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 sm:p-6 rounded-2xl gap-4 md:gap-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
-            <LinkIcon className="w-6 h-6 text-indigo-600 mr-2 shrink-0" />
+            <LayoutGrid className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
             จับคู่งาน (Reconcile)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">จับคู่งานของลูกกับข้อมูลจากครู เพื่อยืนยันความถูกต้อง</p>
@@ -486,34 +486,47 @@ export default function ReconcilePage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredTeacherCols.map((col) => (
+                    {filteredTeacherCols.map((col) => {
+                      const linkedTask = childTasks.find(t => t.teacher_column_id === col.id);
+                      const isSubmittedOrDone = linkedTask && ['Done', 'Submitted', 'Verified'].includes(linkedTask.status);
+                      
+                      let bgColor = "bg-orange-100/80 text-orange-800";
+                      let icon = "🔥";
+                      let text = "รอส่ง / ยังไม่เสร็จ";
+
+                      if (col.is_checked) {
+                        bgColor = "bg-green-100 text-green-800";
+                        icon = "🏆";
+                        text = "ครูตรวจแล้ว";
+                      } else if (isSubmittedOrDone) {
+                        bgColor = "bg-blue-100 text-blue-800";
+                        icon = "⏳";
+                        text = "ส่งแล้ว (รอครูตรวจ)";
+                      }
+
+                      return (
                       <tr key={col.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="text-xs font-semibold text-indigo-600 mb-0.5">{col.subject}</div>
-                          <div className="text-sm text-gray-900 font-medium">
+                          <div className="text-sm text-gray-900 font-medium whitespace-normal break-words max-w-[300px] md:max-w-[400px]">
                             {col.sequence ? col.sequence + '. ' : ''}{col.column_name}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end">
+                          <div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-2">
                             {col.first_seen_at && col.first_seen_at === latestBatchPerSubject.get(col.subject) && (
-                              <span className={clsx("mr-2 text-base", !col.is_checked && "animate-bounce")} title="ใหม่ล่าสุด!">
-                                {col.is_checked ? '🏆' : '🔥'}
+                              <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 uppercase tracking-wider">
+                                NEW
                               </span>
                             )}
-                            {col.is_checked ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
-                              <CheckCircle2 className="w-3 h-3 mr-1" /> ตรวจแล้ว
+                            <span className={clsx("inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-black/5 shadow-sm", bgColor)}>
+                              <span className="mr-1.5 text-sm">{icon}</span> {text}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                              <XCircle className="w-3 h-3 mr-1 text-gray-400" /> รอส่ง
-                            </span>
-                            )}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredTeacherCols.length === 0 && (
                       <tr>
                         <td colSpan={2} className="px-6 py-8 text-center text-gray-500 text-sm">

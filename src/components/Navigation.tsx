@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, CheckSquare, Settings, BookOpen, Rocket, Printer } from 'lucide-react';
+import { Home, CheckSquare, Settings, BookOpen, Rocket, Printer, LayoutGrid } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
 
@@ -20,8 +20,9 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
 
   const navItems = [
     { name: 'ภาพรวม (Dashboard)', href: '/', icon: Home },
+    { name: 'งานทั้งหมด (All Tasks)', href: '/all-tasks', icon: CheckSquare },
     { name: 'การบ้าน (Home Work)', href: '/homework', icon: BookOpen },
-    { name: 'จับคู่งาน (Reconcile)', href: '/reconcile', icon: CheckSquare },
+    { name: 'จับคู่งาน (Reconcile)', href: '/reconcile', icon: LayoutGrid },
     { name: 'พิมพ์ใบงาน (Print)', href: '/print', icon: Printer },
     { name: 'ตั้งค่า (Settings)', href: '/settings', icon: Settings },
   ];

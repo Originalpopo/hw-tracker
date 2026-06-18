@@ -147,7 +147,8 @@ export function extractTeacherTasksForStudent(csvData: string[][], studentName: 
     const safeSubject = subject.replace(/[\/\\]/g, '-');
     const safeColumnName = columnName.replace(/[\/\\]/g, '-');
     const safeStudentName = studentName.replace(/[\/\\]/g, '-');
-    const id = `${safeStudentName}_${safeSubject}_${safeColumnName}`.replace(/\s+/g, '_').substring(0, 150);
+    // เพิ่ม col เข้ารหัส id เพื่อป้องกันปัญหางานที่ชื่อเหมือนกันไปทับกัน (เช่น งานที่ 10 กับ 12 ชื่อเหมือนกัน)
+    const id = `${safeStudentName}_${safeSubject}_col${col}_${safeColumnName}`.replace(/\s+/g, '_').substring(0, 150);
 
     tasks.push({
       id,

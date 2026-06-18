@@ -282,7 +282,7 @@ function HomeworkDashboard() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
-            <Sparkles className="w-6 h-6 text-yellow-400 mr-2 shrink-0" />
+            <BookOpen className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
             การบ้านของฉัน (Home Work)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">บันทึกและติดตามงานของคุณได้ที่นี่</p>
