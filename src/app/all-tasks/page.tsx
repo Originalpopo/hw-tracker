@@ -172,7 +172,7 @@ export default function AllTasksPage() {
             <table className="min-w-full divide-y divide-gray-200 border-collapse">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r border-gray-200 min-w-[120px] sticky left-0 z-10 bg-gray-50">
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r border-gray-200 min-w-[120px] sticky left-0 z-20 bg-gray-50 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)]">
                     วิชา
                   </th>
                   {Array.from({ length: maxSequence }).map((_, i) => (
@@ -187,8 +187,8 @@ export default function AllTasksPage() {
                   const currentSubjectMax = subjectMaxSequence.get(subjectName) || 0;
                   
                   return (
-                    <tr key={subjectName} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-bold text-gray-900 border-r border-gray-200 sticky left-0 z-10 bg-white">
+                    <tr key={subjectName} className="hover:bg-gray-50 transition-colors group">
+                      <td className="px-4 py-3 text-sm font-bold text-gray-900 border-r border-gray-200 sticky left-0 z-10 bg-white group-hover:bg-gray-50 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)] transition-colors">
                         {subjectName}
                       </td>
                       {Array.from({ length: maxSequence }).map((_, i) => {

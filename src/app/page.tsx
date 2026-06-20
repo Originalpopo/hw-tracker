@@ -109,15 +109,32 @@ export default function DashboardOverview() {
     );
   }
 
-  // Recent tasks (last 3 pending)
+  // All pending tasks
   const recentPending = tasks
     .filter(t => !['Done', 'Submitted', 'Verified'].includes(t.status))
     .sort((a, b) => {
+      // 1. เรียงตามรายวิชา
+      if (a.subject < b.subject) return -1;
+      if (a.subject > b.subject) return 1;
+
+      // 2. เรียงตามลำดับ (ดึงตัวเลขจากชื่องาน)
+      const getSeq = (name: string) => {
+        const match = name.match(/(\d+)/);
+        return match ? parseInt(match[0], 10) : 999999;
+      };
+      
+      const seqA = getSeq(a.task_name);
+      const seqB = getSeq(b.task_name);
+      
+      if (seqA !== seqB) {
+        return seqA - seqB;
+      }
+
+      // 3. ถ้าไม่มีตัวเลข หรือตัวเลขเท่ากัน ให้เรียงตามเวลาที่สร้าง (เก่าไปใหม่)
       const timeA = (a.created_at as any)?.toMillis?.() || Date.now();
       const timeB = (b.created_at as any)?.toMillis?.() || Date.now();
-      return timeB - timeA;
-    })
-    .slice(0, 3);
+      return timeA - timeB;
+    });
 
   // Subject progress calculation
   const subjectStats: Record<string, { total: number, done: number }> = {};
@@ -303,7 +320,7 @@ export default function DashboardOverview() {
                     style={{ width: animateBars ? `${percent}%` : '0%' }}
                   >
                     {percent > 0 && (
-                      <span className="absolute -right-3 top-1/2 transform -translate-y-1/2 text-2xl drop-shadow-md z-10">
+                      <span className="absolute -right-4 top-1/2 transform -translate-y-1/2 text-4xl drop-shadow-md z-10">
                         {percent === 100 ? '🏆' : <span className="inline-block rotate-45">🚀</span>}
                       </span>
                     )}
@@ -335,7 +352,7 @@ export default function DashboardOverview() {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold text-gray-800 flex items-center">
             <CalendarDays className="w-5 h-5 text-blue-500 mr-2" />
-            ภารกิจเร่งด่วน (ยังไม่ทำ)
+            ภารกิจเร่งด่วน (ยังไม่ทำและกำลังทำ)
           </h2>
           <Link href="/homework" className="text-sm text-blue-600 font-medium hover:underline flex items-center">
             ดูทั้งหมด <ArrowRight className="w-4 h-4 ml-1" />
@@ -349,7 +366,7 @@ export default function DashboardOverview() {
             </div>
           ) : (
             recentPending.map(task => (
-              <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-orange-200 hover:-translate-y-1 hover:shadow-md transition-all duration-300 group">
+              <Link key={task.id} href={`/homework?subject=${encodeURIComponent(task.subject)}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-orange-200 hover:-translate-y-1 hover:shadow-md transition-all duration-300 group">
                 <div className="flex items-center overflow-hidden">
                   <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 mr-4 shrink-0 shadow-sm group-hover:scale-110 transition-transform">
                     <Target className="w-5 h-5" />
@@ -359,10 +376,10 @@ export default function DashboardOverview() {
                     <p className="text-xs text-gray-500 mt-0.5">{task.subject}</p>
                   </div>
                 </div>
-                <Link href="/homework" className="bg-white border border-gray-200 text-gray-600 p-2 rounded-full hover:bg-orange-50 hover:text-orange-600 transition-all shadow-sm hover:scale-110 shrink-0 ml-4">
+                <div className="bg-white border border-gray-200 text-gray-600 p-2 rounded-full group-hover:bg-orange-50 group-hover:text-orange-600 transition-all shadow-sm group-hover:scale-110 shrink-0 ml-4">
                   <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
+                </div>
+              </Link>
             ))
           )}
         </div>

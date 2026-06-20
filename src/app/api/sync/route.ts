@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns } from '@/lib/db';
+import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns, updateChildTask } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -53,7 +53,16 @@ export async function POST(request: Request) {
       const childTasks = await getChildTasks(studentName);
       for (const task of childTasks) {
         if (task.teacher_column_id && task.id) {
-          const linkedCol = allTeacherCols.find(c => c.id === task.teacher_column_id);
+          let currentTeacherColId = task.teacher_column_id;
+          
+          // Migrate old ID format (which included task name) to new format (column index only)
+          const oldFormatMatch = currentTeacherColId.match(/^(.*_col\d+)_.*$/);
+          if (oldFormatMatch) {
+            currentTeacherColId = oldFormatMatch[1];
+            await updateChildTask(task.id, { teacher_column_id: currentTeacherColId });
+          }
+
+          const linkedCol = allTeacherCols.find(c => c.id === currentTeacherColId);
           if (linkedCol) {
             // If teacher checked it, but child task is not Verified, update it
             if (linkedCol.is_checked && task.status !== 'Verified') {
