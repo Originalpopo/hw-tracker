@@ -220,7 +220,8 @@ export default function AllTasksPage() {
                         const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
                         
                         let bgColor = "bg-orange-100/80";
-                        let icon = "📝";
+                        const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
+                        let icon = isOld ? "🔥" : "📝";
                         let titleSuffix = "";
 
                         if (col.is_checked) {
