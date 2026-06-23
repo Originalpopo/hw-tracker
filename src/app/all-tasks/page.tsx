@@ -220,7 +220,7 @@ export default function AllTasksPage() {
                         const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
                         
                         let bgColor = "bg-orange-100/80";
-                        let icon = "🔥";
+                        let icon = "📝";
                         let titleSuffix = "";
 
                         if (col.is_checked) {
