@@ -29,6 +29,25 @@ function HomeworkDashboard() {
   const [newNote, setNewNote] = useState('');
   const [importing, setImporting] = useState(false);
 
+  const availableSubjects = useMemo(() => {
+    const subjects = new Set<string>();
+    if (teacherCols.length > 0) {
+      teacherCols.forEach(col => subjects.add(col.subject));
+    } else {
+      DEFAULT_SUBJECTS.forEach(s => subjects.add(s));
+    }
+    subjects.delete('อื่นๆ');
+    const result = Array.from(subjects).sort();
+    result.push('อื่นๆ');
+    return result;
+  }, [teacherCols]);
+
+  useEffect(() => {
+    if (availableSubjects.length > 0 && !availableSubjects.includes(newSubject)) {
+      setNewSubject(availableSubjects[0]);
+    }
+  }, [availableSubjects, newSubject]);
+
   // Filter state
   const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
 
@@ -338,7 +357,7 @@ function HomeworkDashboard() {
                 onChange={(e) => setNewSubject(e.target.value)}
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mb-2"
               >
-                {DEFAULT_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               {newSubject === 'อื่นๆ' && (
                 <input 
