@@ -8,12 +8,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'กรุณาระบุลิงก์ Google Sheet' }, { status: 400 });
     }
 
-    const data = await fetchGoogleSheetData(sheetUrl);
-    if (!data) {
+    const result = await fetchGoogleSheetData(sheetUrl) as any;
+    if (!result || !result.data) {
       return NextResponse.json({ error: 'ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบลิงก์หรือการแชร์ไฟล์' }, { status: 500 });
     }
     
-    const names = extractStudentNames(data as string[][]);
+    const names = extractStudentNames(result.data as string[][]);
     return NextResponse.json({ students: names });
   } catch (error) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

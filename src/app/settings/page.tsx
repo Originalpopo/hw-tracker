@@ -14,6 +14,32 @@ export default function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
 
+  const fetchStudents = async (url: string) => {
+    if (!url) {
+      setError('กรุณาใส่ลิงก์ Google Sheet ก่อน');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sheetUrl: url })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStudents(data.students || []);
+      } else {
+        setError(data.error || 'Failed to fetch students');
+      }
+    } catch (err) {
+      setError('Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
@@ -56,31 +82,7 @@ export default function SettingsPage() {
     init();
   }, []);
 
-  const fetchStudents = async (url: string) => {
-    if (!url) {
-      setError('กรุณาใส่ลิงก์ Google Sheet ก่อน');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sheetUrl: url })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setStudents(data.students || []);
-      } else {
-        setError(data.error || 'Failed to fetch students');
-      }
-    } catch (err) {
-      setError('Network error');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const handleSave = async () => {
     const urls = sheetUrls.split('\n').map(u => u.trim()).filter(Boolean);

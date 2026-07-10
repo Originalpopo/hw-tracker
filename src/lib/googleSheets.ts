@@ -19,12 +19,48 @@ export async function fetchGoogleSheetData(sheetUrl: string) {
     if (!response.ok) {
       throw new Error('Failed to fetch Google Sheet CSV');
     }
+    
+    // Extract sheet name from Content-Disposition header
+    // e.g. attachment; filename="DocName-TabName.csv"; filename*=UTF-8''DocName%20-%20TabName.csv
+    let sheetName = "ทั่วไป";
+    const contentDisposition = response.headers.get('content-disposition');
+    if (contentDisposition) {
+      const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+      let filename = "";
+      if (filenameStarMatch) {
+        filename = decodeURIComponent(filenameStarMatch[1]);
+      } else {
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      if (filename) {
+        // Remove .csv extension
+        filename = filename.replace(/\.csv$/i, '');
+        // The format is usually "Document Name - Tab Name"
+        // We split by " - " and take the last part as the tab name
+        const parts = filename.split(' - ');
+        if (parts.length > 1) {
+          // If the document name itself has " - ", we just take the last part as the tab name
+          sheetName = parts[parts.length - 1].trim();
+        } else {
+          sheetName = filename.trim();
+        }
+      }
+    }
+    
+    console.log('[SYNC DEBUG] exportUrl:', exportUrl);
+    console.log('[SYNC DEBUG] contentDisposition:', contentDisposition);
+    console.log('[SYNC DEBUG] extracted sheetName:', sheetName);
+
     const csvText = await response.text();
 
     return new Promise((resolve, reject) => {
       Papa.parse(csvText, {
         complete: (results) => {
-          resolve(results.data as string[][]);
+          resolve({ data: results.data as string[][], sheetName });
         },
         error: (error: any) => {
           reject(error);
@@ -72,7 +108,7 @@ export function extractStudentNames(csvData: string[][]): string[] {
 /**
  * Extracts teacher columns and their status for a specific student
  */
-export function extractTeacherTasksForStudent(csvData: string[][], studentName: string): TeacherColumn[] {
+export function extractTeacherTasksForStudent(csvData: string[][], studentName: string, sheetName: string = "ทั่วไป"): TeacherColumn[] {
   if (!csvData || csvData.length === 0) return [];
 
   // Find task header row and student start row
@@ -107,8 +143,8 @@ export function extractTeacherTasksForStudent(csvData: string[][], studentName: 
   const tasks: TeacherColumn[] = [];
   const now = new Date();
   
-  // วิชาหลักจะอยู่ที่เซลล์ A1 ของ Sheet (Row 0, Col 0)
-  const mainSubject = csvData[0][0]?.trim() || "ทั่วไป";
+  // วิชาหลักถูกดึงมาจากชื่อ Sheet แทนการอ่านจาก A1
+  const mainSubject = sheetName;
 
   // Iterate through columns starting from index 2
   for (let col = 2; col < taskRow.length; col++) {

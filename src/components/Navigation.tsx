@@ -13,8 +13,8 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
   useEffect(() => {
     // Read from localStorage to check if student is selected
     const savedName = localStorage.getItem('hw_student_name');
-    if (savedName) {
-      setStudentName(savedName);
+    if (savedName && savedName !== studentName) {
+      setTimeout(() => setStudentName(savedName), 0);
     }
   }, [pathname]); // Re-check on navigation
 
