@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
-import { CheckSquare, AlertCircle, RefreshCcw } from 'lucide-react';
+import { CheckSquare, AlertCircle, RefreshCcw, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
 
@@ -19,14 +19,12 @@ export default function AllTasksPage() {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
       
-      if (!savedName || !savedUrlsStr) {
-        const globalSettings = await getGlobalSettings();
-        if (globalSettings) {
-          savedName = globalSettings.student_name;
-          savedUrlsStr = globalSettings.sheet_urls;
-          localStorage.setItem('hw_student_name', savedName);
-          localStorage.setItem('hw_sheet_urls', savedUrlsStr);
-        }
+      const globalSettings = await getGlobalSettings();
+      if (globalSettings) {
+        savedName = globalSettings.student_name || savedName;
+        savedUrlsStr = globalSettings.sheet_urls || savedUrlsStr;
+        if (savedName) localStorage.setItem('hw_student_name', savedName);
+        if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
       }
 
       setStudentName(savedName || null);
@@ -142,6 +140,23 @@ export default function AllTasksPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      {/* View Version Switcher Tabs */}
+      <div className="flex items-center justify-between bg-gray-100 p-1.5 rounded-2xl w-full sm:w-max">
+        <span 
+          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-bold rounded-xl bg-white text-indigo-700 shadow-sm transition-all text-center"
+        >
+          📊 ตารางแนวนอนเดิม
+        </span>
+        <Link 
+          href="/all-tasks-v2"
+          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-semibold rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/50 transition-all flex items-center justify-center gap-1.5"
+        >
+          <Sparkles className="w-4 h-4 text-blue-600" />
+          🆕 ตารางแนวตั้งใหม่ (งานใหม่อยู่บน)
+        </Link>
+      </div>
+
+      {/* Header section (Matches /homework standard) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4 md:gap-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">

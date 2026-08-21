@@ -1,0 +1,577 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
+import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Layers, Zap, ListTodo } from 'lucide-react';
+import Link from 'next/link';
+import { clsx } from 'clsx';
+
+export default function AllTasksV2Page() {
+  const [studentName, setStudentName] = useState<string | null>(null);
+  const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
+  const [childTasks, setChildTasks] = useState<ChildTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [sheetUrls, setSheetUrls] = useState<string[]>([]);
+  
+  // Filter & View Options
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [selectedTaskModal, setSelectedTaskModal] = useState<{
+    subject: string;
+    seq: number;
+    col: TeacherColumn;
+    status: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New';
+    statusText: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const init = async () => {
+      let savedName = localStorage.getItem('hw_student_name');
+      let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
+      
+      const globalSettings = await getGlobalSettings();
+      if (globalSettings) {
+        savedName = globalSettings.student_name || savedName;
+        savedUrlsStr = globalSettings.sheet_urls || savedUrlsStr;
+        if (savedName) localStorage.setItem('hw_student_name', savedName);
+        if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
+      }
+
+      setStudentName(savedName || null);
+      
+      let urls: string[] = [];
+      if (savedUrlsStr) {
+        urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
+      }
+      setSheetUrls(urls);
+
+      if (savedName) {
+        loadData(savedName);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const loadData = async (name: string) => {
+    setLoading(true);
+    try {
+      const [cols, tasks] = await Promise.all([
+        getTeacherColumns(name),
+        getChildTasks(name)
+      ]);
+      setTeacherCols(cols);
+      setChildTasks(tasks);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!studentName || sheetUrls.length === 0) {
+      alert("กรุณาตั้งค่าลิงก์ Google Sheet ในหน้า Settings ก่อนครับ");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentName, sheetUrls })
+      });
+      if (res.ok) {
+        await loadData(studentName);
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const mappedTeacherColStatus = useMemo(() => {
+    const statusMap = new Map<string, string>();
+    childTasks.forEach(task => {
+      if (task.teacher_column_id) {
+        statusMap.set(task.teacher_column_id, task.status);
+      }
+    });
+    return statusMap;
+  }, [childTasks]);
+
+  // Overall statistics for top summary banner
+  const stats = useMemo(() => {
+    let checkedCount = 0;
+    let waitingCount = 0;
+    let overdueCount = 0;
+    let newCount = 0;
+    let totalCount = 0;
+
+    teacherCols.forEach(col => {
+      if (col.sequence) {
+        totalCount++;
+        const mappedStatus = mappedTeacherColStatus.get(col.id);
+        const isMapped = mappedStatus !== undefined;
+        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+
+        if (col.is_checked) {
+          checkedCount++;
+        } else if (isSubmittedOrDone) {
+          waitingCount++;
+        } else {
+          const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
+          if (isOld) {
+            overdueCount++;
+          } else {
+            newCount++;
+          }
+        }
+      }
+    });
+
+    return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
+  }, [teacherCols, mappedTeacherColStatus]);
+
+  // Group into Top-Aligned Equalizer Stacks per Subject
+  const subjectStacks = useMemo(() => {
+    const sMap = new Map<string, TeacherColumn[]>();
+
+    teacherCols.forEach(col => {
+      if (col.sequence) {
+        if (!sMap.has(col.subject)) {
+          sMap.set(col.subject, []);
+        }
+        sMap.get(col.subject)!.push(col);
+      }
+    });
+
+    const result: {
+      subject: string;
+      tasks: TeacherColumn[];
+      total: number;
+      checked: number;
+      pending: number;
+      overdue: number;
+      waiting: number;
+      progress: number;
+    }[] = [];
+
+    Array.from(sMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(subject => {
+      const list = [...sMap.get(subject)!];
+      // Sort tasks within each subject: Newest (highest sequence) at top (index 0) ➔ Oldest at bottom
+      list.sort((a, b) => (b.sequence || 0) - (a.sequence || 0));
+
+      let checked = 0;
+      let overdue = 0;
+      let waiting = 0;
+
+      list.forEach(col => {
+        const mappedStatus = mappedTeacherColStatus.get(col.id);
+        const isMapped = mappedStatus !== undefined;
+        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+
+        if (col.is_checked) {
+          checked++;
+        } else if (isSubmittedOrDone) {
+          waiting++;
+        } else {
+          const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
+          if (isOld) overdue++;
+        }
+      });
+
+      const total = list.length;
+      const progress = total === 0 ? 0 : Math.round((checked / total) * 100);
+
+      result.push({
+        subject,
+        tasks: list,
+        total,
+        checked,
+        pending: total - checked,
+        overdue,
+        waiting,
+        progress
+      });
+    });
+
+    return result;
+  }, [teacherCols, mappedTeacherColStatus]);
+
+  if (!studentName) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
+        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
+          <AlertCircle className="w-12 h-12 text-blue-500" />
+        </div>
+        <h2 className="text-3xl font-bold text-gray-900 mb-4">ยินดีต้อนรับสู่ระบบติดตามงาน</h2>
+        <p className="text-gray-500 max-w-md mb-8 text-lg">กรุณาตั้งค่าชื่อนักเรียนก่อนเริ่มใช้งาน</p>
+        <Link href="/settings" className="bg-blue-600 text-white px-8 py-3 rounded-full font-medium hover:bg-blue-700 hover:shadow-lg transition-all transform hover:-translate-y-1">
+          ไปหน้าตั้งค่า
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      
+      {/* View Version Switcher Tabs */}
+      <div className="flex items-center justify-between bg-gray-100 p-1.5 rounded-2xl w-full sm:w-max">
+        <Link 
+          href="/all-tasks"
+          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-semibold rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/50 transition-all text-center"
+        >
+          📊 ตารางแนวนอนเดิม
+        </Link>
+        <span 
+          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-bold rounded-xl bg-white text-blue-700 shadow-sm transition-all flex items-center justify-center gap-1.5"
+        >
+          <Sparkles className="w-4 h-4 text-blue-600" />
+          🆕 Compact EQ (ชื่อวิชาแนวตั้ง 2 แถว)
+        </span>
+      </div>
+
+      {/* Header section (Matches /homework standard) */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
+            <CheckSquare className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
+            งานทั้งหมด (All Tasks)
+          </h1>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">
+            ตารางแสดงสถานะงานทุกวิชาอ้างอิงจากข้อมูลของครู • งานใหม่อยู่ด้านบนสุด
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+          {/* Toggle Hide Completed Tasks */}
+          <button
+            onClick={() => setHideCompleted(!hideCompleted)}
+            className={clsx(
+              "h-[42px] px-4 rounded-xl text-sm font-medium border flex items-center transition-all active:scale-95",
+              hideCompleted 
+                ? "bg-blue-50 border-blue-200 text-blue-700 shadow-inner font-bold" 
+                : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm"
+            )}
+          >
+            {hideCompleted ? <EyeOff className="w-4 h-4 mr-2 text-blue-600" /> : <Eye className="w-4 h-4 mr-2 text-gray-400" />}
+            {hideCompleted ? 'ซ่อนงานที่ตรวจแล้ว' : 'แสดงงานทั้งหมด'}
+          </button>
+
+          {/* Sync Button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50"
+          >
+            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
+            {syncing ? 'กำลังดึง...' : 'อัปเดตข้อมูลจากครู'}
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Summary Cards (5 Cards including Total Tasks) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+        {/* Total Tasks Card */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
+            <ListTodo className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">งานทั้งหมด</p>
+            <p className="text-xl font-black text-blue-600">{stats.totalCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        {/* Checked Card */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+            🏆
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">ตรวจแล้ว</p>
+            <p className="text-xl font-black text-emerald-600">{stats.checkedCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        {/* Waiting Teacher Card */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl shrink-0">
+            ⏳
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">รอครูอัปเดต</p>
+            <p className="text-xl font-black text-sky-600">{stats.waitingCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        {/* Overdue Card */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl shrink-0">
+            🔥
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">งานค้าง (&gt;3 วัน)</p>
+            <p className="text-xl font-black text-rose-600">{stats.overdueCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        {/* New Tasks Card */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+            📝
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">งานใหม่</p>
+            <p className="text-xl font-black text-amber-600">{stats.newCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Ultra-Compact Equalizer Grid */}
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-200">
+          
+          {/* Legend Guide Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-gray-100 text-xs text-gray-600">
+            <div className="flex items-center gap-1 font-bold text-gray-800">
+              <Zap className="w-4 h-4 text-blue-600" />
+              <span>ความหมาย:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span> 🏆 ตรวจแล้ว</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-sky-400 inline-block"></span> ⏳ รอครูอัปเดต</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-rose-500 inline-block"></span> 🔥 ค้าง &gt;3 วัน</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-400 inline-block"></span> 📝 งานใหม่</span>
+            </div>
+          </div>
+
+          {/* Compact Columns Container */}
+          <div className="overflow-x-auto pb-4">
+            <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
+              {subjectStacks.map((stack) => {
+                const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
+
+                return (
+                  <div 
+                    key={stack.subject}
+                    className="w-[66px] sm:w-[76px] flex flex-col bg-gray-50/60 border border-gray-200/90 rounded-2xl p-1.5 shadow-xs hover:border-blue-400 transition-all group/col relative hover:z-30"
+                  >
+                    {/* Vertical 2-Line Rotated Subject Header (Airy & Taller) */}
+                    <div className="bg-white rounded-xl py-2.5 px-1 border border-gray-200 shadow-xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden group-hover/col:shadow-sm transition-all">
+                      {/* Mini Status Badge on Top */}
+                      <div className="z-10">
+                        <span className={clsx(
+                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
+                          stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                        )}>
+                          {stack.pending > 0 ? `-${stack.pending}` : '✓'}
+                        </span>
+                      </div>
+
+                      {/* Rotated Subject Text: Airy, taller, supports 2 lines gracefully */}
+                      <div className="flex-1 flex items-center justify-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden">
+                        <span 
+                          className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-[1.1] [writing-mode:vertical-rl] rotate-180 max-h-[115px] sm:max-h-[135px] inline-block text-center"
+                          title={stack.subject}
+                          style={{
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word'
+                          }}
+                        >
+                          {stack.subject}
+                        </span>
+                      </div>
+
+                      {/* Total count & mini progress at bottom */}
+                      <div className="w-full flex flex-col items-center pt-1.5 border-t border-gray-100 z-10">
+                        <span className="text-[10px] font-bold text-gray-500 font-mono leading-none">
+                          {stack.total}
+                        </span>
+                        <div className="w-full bg-gray-100 rounded-full h-1 mt-1 overflow-hidden">
+                          <div 
+                            className={clsx("h-full transition-all duration-700", stack.progress === 100 ? "bg-emerald-500" : "bg-blue-600")}
+                            style={{ width: `${stack.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Compact Task Tiles (Newest on Top) */}
+                    <div className="flex flex-col gap-1.5">
+                      {visibleTasks.map((col, index) => {
+                        const seq = col.sequence || 0;
+                        const isTopLatest = index === 0;
+
+                        // Determine status
+                        const mappedStatus = mappedTeacherColStatus.get(col.id);
+                        const isMapped = mappedStatus !== undefined;
+                        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+
+                        let cardBg = "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs";
+                        const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
+                        let icon = isOld ? "🔥" : "📝";
+                        let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
+                        let statusText = isOld ? "งานค้างเกิน 3 วัน (ยังไม่ส่ง)" : "งานใหม่ (ยังไม่ส่ง)";
+
+                        if (col.is_checked) {
+                          cardBg = "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300/80";
+                          icon = "🏆";
+                          statusKey = 'Checked';
+                          statusText = "ครูตรวจแล้วเรียบร้อย";
+                        } else if (isSubmittedOrDone) {
+                          cardBg = "bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-300 shadow-xs";
+                          icon = "⏳";
+                          statusKey = 'WaitingTeacher';
+                          statusText = "เด็กส่งแล้ว (รอครูอัปเดตคะแนน)";
+                        } else if (isOld) {
+                          cardBg = "bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-300 shadow-xs";
+                        }
+
+                        return (
+                          <div
+                            key={col.id}
+                            onClick={() => setSelectedTaskModal({
+                              subject: stack.subject,
+                              seq,
+                              col,
+                              status: statusKey,
+                              statusText
+                            })}
+                            className={clsx(
+                              "relative group/tile hover:z-50 rounded-xl h-[44px] sm:h-[48px] border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
+                              cardBg,
+                              isTopLatest && !col.is_checked && "ring-2 ring-rose-400 ring-offset-1"
+                            )}
+                          >
+                            {/* Sequence Number */}
+                            <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
+                              #{seq}
+                            </span>
+
+                            {/* Status Icon */}
+                            <span className="text-sm sm:text-base leading-none mt-0.5 drop-shadow-2xs">
+                              {icon}
+                            </span>
+
+                            {/* Hover Tooltip Floating Preview (Ultra High Z-Index) */}
+                            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max max-w-[240px] bg-gray-950 text-white text-xs p-3 rounded-2xl opacity-0 group-hover/tile:opacity-100 pointer-events-none transition-all duration-150 z-[100] shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5)] border border-gray-700 ring-1 ring-white/10">
+                              <p className="font-extrabold text-amber-300 text-[11px] mb-1 flex items-center gap-1">
+                                <span>{stack.subject}</span>
+                                <span>•</span>
+                                <span>#{seq}</span>
+                              </p>
+                              <p className="font-semibold text-gray-100 leading-snug mb-1.5 text-xs">{col.column_name}</p>
+                              <div className="pt-1 border-t border-gray-800 text-[10px] text-gray-400 font-medium">
+                                {statusText}
+                              </div>
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-6 border-transparent border-t-gray-950"></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {visibleTasks.length === 0 && (
+                        <div className="py-4 text-center text-[10px] text-gray-400 font-bold bg-white/50 rounded-xl border border-dashed border-gray-200">
+                          ครบ ✨
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Details Pop-up Modal */}
+      {selectedTaskModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setSelectedTaskModal(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-gray-100 relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button 
+              onClick={() => setSelectedTaskModal(null)}
+              className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center space-x-3 mb-4">
+              <div className={clsx(
+                "w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner",
+                selectedTaskModal.status === 'Checked' && "bg-emerald-100 text-emerald-700",
+                selectedTaskModal.status === 'WaitingTeacher' && "bg-sky-100 text-sky-700",
+                selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-700",
+                selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-700"
+              )}>
+                {selectedTaskModal.status === 'Checked' ? '🏆' : selectedTaskModal.status === 'WaitingTeacher' ? '⏳' : selectedTaskModal.status === 'Overdue' ? '🔥' : '📝'}
+              </div>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-md">
+                  {selectedTaskModal.subject} • ชิ้นที่ #{selectedTaskModal.seq}
+                </span>
+                <h3 className="text-lg font-extrabold text-gray-900 mt-1">รายละเอียดงาน</h3>
+              </div>
+            </div>
+
+            {/* Task Info Content */}
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100 mb-5">
+              <div>
+                <p className="text-xs text-gray-400 font-semibold mb-0.5">ชื่องานที่ครูสั่ง</p>
+                <p className="text-sm font-bold text-gray-900">{selectedTaskModal.col.column_name}</p>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-400 font-semibold mb-0.5">สถานะปัจจุบัน</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={clsx(
+                    "text-xs font-bold px-2.5 py-1 rounded-full",
+                    selectedTaskModal.status === 'Checked' && "bg-emerald-100 text-emerald-800",
+                    selectedTaskModal.status === 'WaitingTeacher' && "bg-sky-100 text-sky-800",
+                    selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-800",
+                    selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-800"
+                  )}>
+                    {selectedTaskModal.statusText}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}`}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+              >
+                <BookOpen className="w-4 h-4" /> ไปหน้าการบ้านวิชานี้
+              </Link>
+              <button
+                onClick={() => setSelectedTaskModal(null)}
+                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

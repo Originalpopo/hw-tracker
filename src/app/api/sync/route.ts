@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns, updateChildTask } from '@/lib/db';
+import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns, updateChildTask, getGlobalSettings } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
-    const { studentName, sheetUrls } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    let { studentName, sheetUrls } = body;
+
+    const globalSettings = await getGlobalSettings();
+    if (globalSettings) {
+      if (!studentName) studentName = globalSettings.student_name;
+      const globalUrls = (globalSettings.sheet_urls || '').split('\n').map((u: string) => u.trim()).filter(Boolean);
+      if (!sheetUrls || !Array.isArray(sheetUrls) || sheetUrls.length < globalUrls.length) {
+        sheetUrls = globalUrls;
+      }
+    }
+
     if (!studentName || !sheetUrls || !Array.isArray(sheetUrls) || sheetUrls.length === 0) {
       return NextResponse.json({ error: 'studentName and sheetUrls array are required' }, { status: 400 });
     }
