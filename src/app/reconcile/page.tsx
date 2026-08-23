@@ -378,7 +378,7 @@ export default function TaskHubPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
             <LayoutGrid className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
-            จัดการงาน & เชื่อมโยง (Task Hub)
+            จัดการงาน (Task Hub)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
             ศูนย์ตรวจสอบงานครูที่ยังไม่เสร็จ และเชื่อมโยงกับโน้ตส่วนตัวของ {studentName}

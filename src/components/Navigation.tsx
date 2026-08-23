@@ -22,7 +22,7 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
     { name: 'ภาพรวม (Dashboard)', href: '/', icon: Home },
     { name: 'งานทั้งหมด (All Tasks)', href: '/all-tasks', icon: CheckSquare },
     { name: 'การบ้าน (Home Work)', href: '/homework', icon: BookOpen },
-    { name: 'จัดการงาน & เชื่อมโยง (Task Hub)', href: '/reconcile', icon: LayoutGrid },
+    { name: 'จัดการงาน (Task Hub)', href: '/reconcile', icon: LayoutGrid },
     { name: 'พิมพ์ใบงาน (Print)', href: '/print', icon: Printer },
     { name: 'ตั้งค่า (Settings)', href: '/settings', icon: Settings },
   ];
