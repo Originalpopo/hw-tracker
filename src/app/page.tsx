@@ -109,30 +109,27 @@ export default function DashboardOverview() {
     );
   }
 
-  // All pending tasks
+  // All pending tasks (sorted from oldest to newest)
   const recentPending = tasks
     .filter(t => !['Done', 'Submitted', 'Verified'].includes(t.status))
     .sort((a, b) => {
-      // 1. เรียงตามรายวิชา
-      if (a.subject < b.subject) return -1;
-      if (a.subject > b.subject) return 1;
-
-      // 2. เรียงตามลำดับ (ดึงตัวเลขจากชื่องาน)
-      const getSeq = (name: string) => {
-        const match = name.match(/(\d+)/);
+      // ดึง sequence หรือตัวเลขจากชื่องาน
+      const getSeq = (task: ChildTask) => {
+        const match = task.task_name.match(/(\d+)/);
         return match ? parseInt(match[0], 10) : 999999;
       };
       
-      const seqA = getSeq(a.task_name);
-      const seqB = getSeq(b.task_name);
-      
+      const seqA = getSeq(a);
+      const seqB = getSeq(b);
+
+      // 1. ถ้ามีลำดับชิ้นงาน (#1, #2...) ให้เอาชิ้นที่เลขน้อย (งานเก่าที่ค้าง) ขึ้นก่อน
       if (seqA !== seqB) {
         return seqA - seqB;
       }
 
-      // 3. ถ้าไม่มีตัวเลข หรือตัวเลขเท่ากัน ให้เรียงตามเวลาที่สร้าง (เก่าไปใหม่)
-      const timeA = (a.created_at as any)?.toMillis?.() || Date.now();
-      const timeB = (b.created_at as any)?.toMillis?.() || Date.now();
+      // 2. ถ้าไม่มีลำดับ หรือเท่ากัน ให้เรียงตามเวลาที่สร้าง (เก่าไปใหม่)
+      const timeA = (a.created_at as any)?.toMillis?.() || (a.date ? new Date(a.date).getTime() : 0);
+      const timeB = (b.created_at as any)?.toMillis?.() || (b.date ? new Date(b.date).getTime() : 0);
       return timeA - timeB;
     });
 
@@ -346,43 +343,65 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Recent Tasks List */}
+      {/* Recent Urgent Tasks List (3 Columns x Max 3 Rows = 9 Cards) */}
       <hr className="mt-10 mb-4 border-gray-200" />
       <div className="bg-white rounded-3xl p-6 sm:p-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold text-gray-800 flex items-center">
             <CalendarDays className="w-5 h-5 text-blue-500 mr-2" />
-            ภารกิจเร่งด่วน (ยังไม่ทำและกำลังทำ)
+            ภารกิจเร่งด่วน (งานค้างที่ต้องรีบเคลียร์)
           </h2>
-          <Link href="/homework" className="text-sm text-blue-600 font-medium hover:underline flex items-center">
-            ดูทั้งหมด <ArrowRight className="w-4 h-4 ml-1" />
-          </Link>
         </div>
         
-        <div className="space-y-3">
-          {recentPending.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-              <p className="text-gray-500 font-medium">ยอดเยี่ยมมาก! ไม่มีภารกิจค้างเลย 🎉</p>
-            </div>
-          ) : (
-            recentPending.map(task => (
-              <Link key={task.id} href={`/homework?subject=${encodeURIComponent(task.subject)}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-orange-200 hover:-translate-y-1 hover:shadow-md transition-all duration-300 group">
-                <div className="flex items-center overflow-hidden">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 mr-4 shrink-0 shadow-sm group-hover:scale-110 transition-transform">
-                    <Target className="w-5 h-5" />
+        {recentPending.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+            <p className="text-gray-500 font-medium">ยอดเยี่ยมมาก! ไม่มีภารกิจค้างเลย 🎉</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {recentPending.slice(0, 9).map(task => (
+              <Link 
+                key={task.id} 
+                href={`/homework?subject=${encodeURIComponent(task.subject)}`} 
+                className="flex items-center justify-between p-3.5 bg-gray-50/70 hover:bg-white rounded-2xl border border-gray-100 hover:border-orange-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 group cursor-pointer"
+              >
+                <div className="flex items-center overflow-hidden min-w-0 mr-2">
+                  <div className="w-9 h-9 rounded-xl bg-orange-100/70 text-orange-600 flex items-center justify-center mr-3 shrink-0 shadow-2xs group-hover:scale-110 transition-transform">
+                    <Flame className="w-4 h-4 text-orange-500" />
                   </div>
-                  <div className="truncate">
-                    <p className="font-bold text-gray-800 truncate">{task.task_name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{task.subject}</p>
+                  <div className="truncate min-w-0">
+                    <p className="font-bold text-gray-900 truncate text-xs sm:text-sm">{task.task_name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                        {task.subject}
+                      </span>
+                      {task.date && (
+                        <span className="text-[10px] text-gray-400">
+                          {task.date}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="bg-white border border-gray-200 text-gray-600 p-2 rounded-full group-hover:bg-orange-50 group-hover:text-orange-600 transition-all shadow-sm group-hover:scale-110 shrink-0 ml-4">
-                  <ArrowRight className="w-4 h-4" />
+                <div className="bg-white border border-gray-200 text-gray-400 p-1.5 rounded-full group-hover:bg-orange-500 group-hover:text-white group-hover:border-orange-500 transition-all shadow-2xs group-hover:scale-110 shrink-0">
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </Link>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {recentPending.length > 9 && (
+          <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+            <Link 
+              href="/homework" 
+              className="inline-flex items-center text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-6 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
+            >
+              ดูทั้งหมด
+              <ArrowRight className="w-4 h-4 ml-1.5" />
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTaskStatus, getTeacherColumns, updateChildTask, getGlobalSettings } from '@/lib/db';
+import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -75,62 +75,79 @@ export async function POST(request: Request) {
       await syncTeacherColumn(col);
     }
 
-    // Update ChildTasks statuses based on synced columns
+    // Auto-Sync and Auto-Create ChildTasks based on synced columns
     try {
       const childTasks = await getChildTasks(studentName);
-      for (const task of childTasks) {
-        if (task.teacher_column_id && task.id) {
-          let currentTeacherColId = task.teacher_column_id;
-          
-          // Migrate old ID format (which included task name) to new format (column index only)
-          const oldFormatMatch = currentTeacherColId.match(/^(.*_col\d+)_.*$/);
-          if (oldFormatMatch) {
-            currentTeacherColId = oldFormatMatch[1];
+      const matchedTaskIds = new Set<string>();
+
+      for (const col of allTeacherCols) {
+        // Find if a ChildTask already exists for this teacher column
+        let linkedTask = childTasks.find(t => t.teacher_column_id === col.id);
+        
+        // Fallback match: if col ID changed but subject + name matches an existing official task
+        if (!linkedTask) {
+          linkedTask = childTasks.find(t => 
+            !matchedTaskIds.has(t.id!) && 
+            t.subject === col.subject && 
+            t.task_name === col.column_name
+          );
+        }
+
+        if (linkedTask && linkedTask.id) {
+          matchedTaskIds.add(linkedTask.id);
+          const updates: any = {};
+          let needsUpdate = false;
+
+          if (linkedTask.task_type !== 'official') {
+            updates.task_type = 'official';
+            needsUpdate = true;
           }
 
-          let linkedCol = allTeacherCols.find(c => c.id === currentTeacherColId);
-          
-          // If we couldn't find linkedCol, it might be because the Subject changed (e.g. from Doc Title to Tab Name)
-          // Let's try to find it by matching col index and task_name
-          if (!linkedCol) {
-             const colMatch = currentTeacherColId.match(/_col(\d+)$/);
-             if (colMatch) {
-                const colIndex = colMatch[1];
-                linkedCol = allTeacherCols.find(c => c.id.endsWith(`_col${colIndex}`) && c.column_name === task.task_name);
-             }
+          if (linkedTask.teacher_column_id !== col.id) {
+            updates.teacher_column_id = col.id;
+            needsUpdate = true;
           }
 
-          if (linkedCol) {
-            const updates: any = {};
-            let needsUpdate = false;
-            
-            // If the subject has changed, migrate it!
-            if (task.subject !== linkedCol.subject) {
-               updates.subject = linkedCol.subject;
-               needsUpdate = true;
-            }
-            
-            // If the ID was updated (because of subject change or old format)
-            if (task.teacher_column_id !== linkedCol.id) {
-               updates.teacher_column_id = linkedCol.id;
-               needsUpdate = true;
-            }
+          if (linkedTask.subject !== col.subject) {
+            updates.subject = col.subject;
+            needsUpdate = true;
+          }
 
-            // If teacher checked it, but child task is not Verified, update it
-            if (linkedCol.is_checked && task.status !== 'Verified') {
-              updates.status = 'Verified';
-              needsUpdate = true;
-            }
-            // If teacher unchecked it, but child task is Verified, update to Rework
-            else if (!linkedCol.is_checked && task.status === 'Verified') {
+          if (linkedTask.task_name !== col.column_name) {
+            updates.task_name = col.column_name;
+            needsUpdate = true;
+          }
+
+          // If teacher checked it, update status to Verified
+          if (col.is_checked && linkedTask.status !== 'Verified') {
+            updates.status = 'Verified';
+            needsUpdate = true;
+          }
+          // If teacher unchecked it and it was Verified
+          else if (!col.is_checked && linkedTask.status === 'Verified') {
+            if (linkedTask.task_type === 'personal') {
+              updates.status = 'Submitted';
+            } else {
               updates.status = 'Rework';
-              needsUpdate = true;
             }
-            
-            if (needsUpdate) {
-               await updateChildTask(task.id, updates);
-            }
+            needsUpdate = true;
           }
+
+          if (needsUpdate) {
+            await updateChildTask(linkedTask.id, updates);
+          }
+        } else {
+          // Task does not exist yet -> Auto-create official ChildTask directly from teacher column!
+          await addChildTask({
+            student_name: studentName,
+            subject: col.subject,
+            task_name: col.column_name,
+            teacher_column_id: col.id,
+            task_type: 'official',
+            status: col.is_checked ? 'Verified' : 'Todo',
+            date: new Date().toISOString().split('T')[0],
+            note: ''
+          });
         }
       }
     } catch (e) {

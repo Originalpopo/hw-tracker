@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, DownloadCloud, StickyNote, RotateCcw } from 'lucide-react';
-import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, clearAllChildTasks, getTeacherColumns, getGlobalSettings } from '@/lib/db';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, RefreshCcw, StickyNote, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
 import confetti from 'canvas-confetti';
 
 const DEFAULT_SUBJECTS = ['ภาษาไทย', 'คณิตศาสตร์', 'วิทยาศาสตร์', 'ภาษาอังกฤษ', 'สังคมฯ', 'ประวัติศาสตร์', 'สุขศึกษา', 'ศิลปะ', 'การงานอาชีพ', 'อื่นๆ'];
@@ -19,6 +18,8 @@ function HomeworkDashboard() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [sheetUrls, setSheetUrls] = useState<string[]>([]);
   
   // Form state
   const [isAdding, setIsAdding] = useState(false);
@@ -27,7 +28,10 @@ function HomeworkDashboard() {
   const [customSubject, setCustomSubject] = useState('');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newNote, setNewNote] = useState('');
-  const [importing, setImporting] = useState(false);
+
+  // Filter states
+  const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
+  const [filterType, setFilterType] = useState<'all' | 'official' | 'personal'>('all');
 
   const availableSubjects = useMemo(() => {
     const subjects = new Set<string>();
@@ -48,21 +52,32 @@ function HomeworkDashboard() {
     }
   }, [availableSubjects, newSubject]);
 
-  // Filter state
-  const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
-
   useEffect(() => {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
-      if (!savedName) {
+      let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
+      const oldUrl = localStorage.getItem('hw_sheet_url');
+
+      if (!savedName || (!savedUrlsStr && !oldUrl)) {
         const globalSettings = await getGlobalSettings();
         if (globalSettings) {
           savedName = globalSettings.student_name;
-          localStorage.setItem('hw_student_name', savedName);
-          localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
+          savedUrlsStr = globalSettings.sheet_urls;
+          if (savedName) localStorage.setItem('hw_student_name', savedName);
+          if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
         }
       }
-      setStudentName(savedName);
+      
+      setStudentName(savedName || null);
+
+      let urls: string[] = [];
+      if (savedUrlsStr) {
+        urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
+      } else if (oldUrl) {
+        urls = [oldUrl];
+      }
+      setSheetUrls(urls);
+
       if (savedName) {
         loadTasks(savedName);
       } else {
@@ -83,13 +98,16 @@ function HomeworkDashboard() {
 
   const loadTasks = async (name: string) => {
     try {
-      const data = await getChildTasks(name);
-      const cols = await getTeacherColumns(name);
+      const [data, cols] = await Promise.all([
+        getChildTasks(name),
+        getTeacherColumns(name)
+      ]);
       setTeacherCols(cols);
-      // Sort by created_at descending (newest first)
+      
+      // Sort tasks
       data.sort((a, b) => {
-        const timeA = (a.created_at as any)?.toMillis?.() || Date.now();
-        const timeB = (b.created_at as any)?.toMillis?.() || Date.now();
+        const timeA = (a.created_at as any)?.toMillis?.() || 0;
+        const timeB = (b.created_at as any)?.toMillis?.() || 0;
         return timeB - timeA;
       });
       setTasks(data);
@@ -97,6 +115,31 @@ function HomeworkDashboard() {
       console.error('Error fetching tasks:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncFromTeacher = async () => {
+    if (!studentName || sheetUrls.length === 0) {
+      alert("กรุณาตั้งค่าลิงก์ Google Sheet ในหน้า Settings ก่อนครับ");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentName, sheetUrls })
+      });
+      if (res.ok) {
+        await loadTasks(studentName);
+      } else {
+        alert('เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheet');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -111,6 +154,7 @@ function HomeworkDashboard() {
         task_name: newTaskName.trim(),
         status: 'Todo',
         teacher_column_id: null,
+        task_type: 'personal',
         student_name: studentName,
         date: newDate,
         note: newNote.trim()
@@ -123,14 +167,14 @@ function HomeworkDashboard() {
       loadTasks(studentName);
     } catch (error) {
       console.error('Error adding task:', error);
-      alert('ไม่สามารถเพิ่มงานได้ โปรดตรวจสอบการตั้งค่า Firebase');
+      alert('ไม่สามารถเพิ่มงานได้ โปรดตรวจสอบการเชื่อมต่อ');
     }
   };
 
   const handleUpdateStatus = async (taskId: string, newStatus: TaskStatus) => {
     if (!studentName) return;
     try {
-      if (newStatus === 'Done' || newStatus === 'Submitted') {
+      if (newStatus === 'Done' || newStatus === 'Submitted' || newStatus === 'Verified') {
         confetti({
           particleCount: 50,
           spread: 70,
@@ -139,12 +183,24 @@ function HomeworkDashboard() {
         });
       }
 
+      const targetTask = tasks.find(t => t.id === taskId);
+
       // Optimistic update
       setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
       await updateChildTaskStatus(taskId, newStatus);
+
+      // If status changed to Rework on a teacher task, automatically release any linked personal note
+      if (newStatus === 'Rework' && targetTask?.teacher_column_id) {
+        const linkedPersonalTask = tasks.find(t => t.id !== taskId && t.teacher_column_id === targetTask.teacher_column_id && t.task_type === 'personal');
+        if (linkedPersonalTask && linkedPersonalTask.id) {
+          await updateChildTask(linkedPersonalTask.id, {
+            teacher_column_id: null,
+            status: 'Verified'
+          });
+        }
+      }
     } catch (error) {
       console.error('Error updating status:', error);
-      // Revert on error
       loadTasks(studentName);
     }
   };
@@ -160,47 +216,6 @@ function HomeworkDashboard() {
     }
   };
 
-  const handleImportMissing = async () => {
-    if (!studentName || !teacherCols.length) {
-      alert('ไม่พบข้อมูลจากครู กรุณาไปที่หน้า "จับคู่งาน" แล้วกด "อัปเดตข้อมูลจากครู" ก่อนครับ');
-      return;
-    }
-    
-    if (!window.confirm('ระบบจะดึง "งานของครูที่ยังไม่ได้ถูกจับคู่" ไปสร้างเป็นการบ้านใหม่ในช่อง "ยังไม่ทำ" ต้องการดำเนินการต่อหรือไม่?')) {
-      return;
-    }
-
-    setImporting(true);
-    try {
-      const linkedColIds = new Set(tasks.map(t => t.teacher_column_id).filter(Boolean));
-      const missingCols = teacherCols.filter(col => !linkedColIds.has(col.id));
-      
-      let addedCount = 0;
-      for (const col of missingCols) {
-        await addChildTask({
-          subject: col.subject,
-          task_name: `[จากครู] ${col.sequence ? col.sequence + '. ' : ''}${col.column_name}`,
-          status: col.is_checked ? 'Verified' : 'Todo',
-          teacher_column_id: col.id,
-          student_name: studentName
-        });
-        addedCount++;
-      }
-      
-      await loadTasks(studentName);
-      if (addedCount > 0) {
-        alert(`ดึงงานสำเร็จ ${addedCount} งาน`);
-      } else {
-        alert('ไม่มีงานใหม่จากครู (คุณรับงานมาครบหมดแล้ว)');
-      }
-    } catch (error) {
-      console.error('Error importing missing tasks:', error);
-      alert('เกิดข้อผิดพลาดในการดึงงาน');
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const handleDelete = async (taskId: string) => {
     if (!studentName || !window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบงานนี้?')) return;
     try {
@@ -212,46 +227,35 @@ function HomeworkDashboard() {
     }
   };
 
-  const handleClearAll = async () => {
-    if (!studentName) return;
-    
-    const isFiltered = filterSubject !== 'All';
-    const confirmMsg1 = isFiltered 
-      ? `⚠️ คำเตือน: คุณต้องการลบการบ้านวิชา "${filterSubject}" ทั้งหมด ใช่หรือไม่?`
-      : `⚠️ คำเตือน: คุณต้องการลบการบ้านของลูก "ทั้งหมด" ใช่หรือไม่?`;
-      
-    const confirm1 = window.confirm(confirmMsg1);
-    if (!confirm1) return;
-    const confirm2 = window.confirm('ยืนยันอีกครั้ง: ข้อมูลที่ลบแล้วจะไม่สามารถกู้คืนได้ แน่ใจหรือไม่?');
-    if (!confirm2) return;
-
-    try {
-      if (isFiltered) {
-        setTasks(tasks.filter(t => t.subject !== filterSubject));
-      } else {
-        setTasks([]);
-      }
-      await clearAllChildTasks(studentName, filterSubject);
-      alert(isFiltered ? `ล้างข้อมูลการบ้านวิชา ${filterSubject} เรียบร้อยแล้ว` : 'ล้างข้อมูลการบ้านทั้งหมดเรียบร้อยแล้ว');
-    } catch (error) {
-      console.error('Error clearing tasks:', error);
-      alert('เกิดข้อผิดพลาดในการลบข้อมูล');
-      loadTasks(studentName);
-    }
-  };
-
   const uniqueSubjects = useMemo(() => {
     const subjects = new Set(tasks.map(t => t.subject));
     return Array.from(subjects).sort();
   }, [tasks]);
 
+  const countOfficial = useMemo(() => {
+    return tasks.filter(t => t.task_type === 'official' || !!t.teacher_column_id).length;
+  }, [tasks]);
+
+  const countPersonal = useMemo(() => {
+    return tasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id)).length;
+  }, [tasks]);
+
   const filteredTasks = useMemo(() => {
     let result = tasks;
+
+    // Filter by subject
     if (filterSubject !== 'All') {
-      result = tasks.filter(t => t.subject === filterSubject);
+      result = result.filter(t => t.subject === filterSubject);
+    }
+
+    // Filter by type
+    if (filterType === 'official') {
+      result = result.filter(t => t.task_type === 'official' || !!t.teacher_column_id);
+    } else if (filterType === 'personal') {
+      result = result.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id));
     }
     
-    // Sort tasks by sequence ascending (น้อยไปมาก)
+    // Sort tasks by sequence ascending if available, or created_at descending
     return [...result].sort((a, b) => {
       let seqA = Infinity;
       let seqB = Infinity;
@@ -266,14 +270,13 @@ function HomeworkDashboard() {
       }
       
       if (seqA === seqB) {
-        // Fallback to created_at descending if sequences are the same
         const timeA = (a.created_at as any)?.toMillis?.() || 0;
         const timeB = (b.created_at as any)?.toMillis?.() || 0;
         return timeB - timeA;
       }
       return seqA - seqB;
     });
-  }, [tasks, filterSubject, teacherCols]);
+  }, [tasks, filterSubject, filterType, teacherCols]);
 
   if (!studentName) {
     return (
@@ -290,72 +293,130 @@ function HomeworkDashboard() {
     );
   }
 
-  // Filter tasks that are not Verified (to keep dashboard clean)
-  // or maybe group them by status
   const activeTasks = tasks.filter(t => t.status !== 'Verified');
   
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      {/* Header section */}
+      {/* Header section adhering to AGENTS.md Standard Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
             <BookOpen className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
             การบ้านของฉัน (Home Work)
           </h1>
-          <p className="text-gray-500 mt-1 text-sm sm:text-base">บันทึกและติดตามงานของคุณได้ที่นี่</p>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">ติดตามงานจากครูและโน้ตส่วนตัวของ {studentName}</p>
         </div>
+
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
           <button
-            onClick={handleImportMissing}
-            disabled={importing || teacherCols.length === 0}
-            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 rounded-xl font-medium hover:bg-emerald-100 hover:text-emerald-800 transition-all active:scale-95 disabled:opacity-50"
-            title="ดึงงานครูที่เหลือ มาเพิ่มอัตโนมัติ"
-          >
-            <DownloadCloud className={clsx("w-5 h-5 mr-1.5", importing && "animate-bounce")} />
-            เพิ่มงานจากครู
-          </button>
-          <button
             onClick={() => setIsAdding(!isAdding)}
-            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white px-5 rounded-xl font-medium hover:bg-indigo-700 hover:shadow-md transition-all active:scale-95"
+            className={clsx(
+              "h-[42px] px-4 rounded-xl text-sm font-semibold flex items-center justify-center transition-all active:scale-95 w-full sm:w-auto cursor-pointer",
+              isAdding 
+                ? "bg-gray-100 text-gray-700 hover:bg-gray-200" 
+                : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm"
+            )}
           >
-            {isAdding ? 'ยกเลิก' : <><Plus className="w-5 h-5 mr-1" /> เพิ่มงานเอง</>}
+            {isAdding ? 'ยกเลิก' : <><Plus className="w-4 h-4 mr-1.5 text-gray-500" /> เพิ่มโน้ตงานเอง</>}
           </button>
 
-          {/* Filter by Subject */}
-          {tasks.length > 0 && (
-            <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm px-3 h-[44px] w-full sm:w-auto">
-              <Filter className="w-4 h-4 text-gray-400 mr-2" />
-              <select
-                value={filterSubject}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setFilterSubject(val);
-                  localStorage.setItem('hw_filter_subject', val);
-                }}
-                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full"
-              >
-                <option value="All">ทุกวิชา ({tasks.length})</option>
-                {uniqueSubjects.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <button
+            onClick={handleSyncFromTeacher}
+            disabled={syncing}
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+            title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
+          >
+            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
+            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
+          </button>
         </div>
       </div>
 
-      {/* Add Task Form */}
+      {/* Filter Toolbar Card */}
+      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        {/* Type Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+          <button
+            onClick={() => setFilterType('all')}
+            className={clsx(
+              "px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap",
+              filterType === 'all'
+                ? "bg-gray-900 text-white shadow-xs"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            🌟 ทั้งหมด ({tasks.length})
+          </button>
+          
+          <button
+            onClick={() => setFilterType('official')}
+            className={clsx(
+              "px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap",
+              filterType === 'official'
+                ? "bg-blue-600 text-white shadow-xs"
+                : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60"
+            )}
+          >
+            <span>📋 งานตามชีตครู</span>
+            <span className={clsx("px-1.5 py-0.2 rounded-full text-xs font-bold", filterType === 'official' ? "bg-white/20 text-white" : "bg-blue-200 text-blue-800")}>
+              {countOfficial}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setFilterType('personal')}
+            className={clsx(
+              "px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap",
+              filterType === 'personal'
+                ? "bg-purple-600 text-white shadow-xs"
+                : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200/60"
+            )}
+          >
+            <span>📝 โน้ตส่วนตัว</span>
+            <span className={clsx("px-1.5 py-0.2 rounded-full text-xs font-bold", filterType === 'personal' ? "bg-white/20 text-white" : "bg-purple-200 text-purple-800")}>
+              {countPersonal}
+            </span>
+          </button>
+        </div>
+
+        {/* Subject Filter Dropdown */}
+        {tasks.length > 0 && (
+          <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-3 h-[38px] w-full md:w-auto self-stretch md:self-auto">
+            <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+            <select
+              value={filterSubject}
+              onChange={(e) => {
+                const val = e.target.value;
+                setFilterSubject(val);
+                localStorage.setItem('hw_filter_subject', val);
+              }}
+              className="text-xs sm:text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full cursor-pointer"
+            >
+              <option value="All">ทุกวิชา</option>
+              {uniqueSubjects.map(sub => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Add Task Form (Personal Task) */}
       {isAdding && (
-        <form onSubmit={handleAddTask} className="bg-white p-6 rounded-2xl shadow-lg border border-indigo-100 animate-in slide-in-from-top-4 fade-in duration-300">
+        <form onSubmit={handleAddTask} className="bg-white p-6 rounded-2xl shadow-lg border border-purple-100 animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="flex items-center space-x-2 mb-4 text-purple-700 font-bold text-sm">
+            <span className="bg-purple-100 p-1.5 rounded-lg">📝</span>
+            <span>เพิ่มโน้ตการบ้านส่วนตัว (ไม่อิง Google Sheet ของครู)</span>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">วิชา</label>
               <select 
                 value={newSubject}
                 onChange={(e) => setNewSubject(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mb-2"
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none mb-2"
               >
                 {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -366,19 +427,19 @@ function HomeworkDashboard() {
                   value={customSubject}
                   onChange={(e) => setCustomSubject(e.target.value)}
                   placeholder="ระบุวิชา..."
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder:text-gray-400"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder:text-gray-400"
                 />
               )}
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">ชื่องาน (จดตามความเข้าใจ)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ชื่องาน / รายละเอียด</label>
               <input 
                 type="text" 
                 required
                 value={newTaskName}
                 onChange={(e) => setNewTaskName(e.target.value)}
-                placeholder="เช่น คัดลายมือหน้า 15"
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder:text-gray-400"
+                placeholder="เช่น อ่านทบทวนบทที่ 3, ทำแบบฝึกหัดเสริม..."
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder:text-gray-400"
               />
             </div>
             
@@ -388,23 +449,33 @@ function HomeworkDashboard() {
                 type="date"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Note (รายละเอียดเพิ่มเติม)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note (บันทึกเตือนความจำเพิ่มเติม)</label>
               <input 
                 type="text" 
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="โน้ตสั้นๆ (ถ้ามี)..."
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder:text-gray-400"
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder:text-gray-400"
               />
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
-            <button type="submit" className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm flex items-center">
-              <Plus className="w-4 h-4 mr-2" /> บันทึกงาน
+          <div className="mt-4 flex justify-end gap-2">
+            <button 
+              type="button" 
+              onClick={() => setIsAdding(false)} 
+              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+            >
+              ยกเลิก
+            </button>
+            <button 
+              type="submit" 
+              className="bg-purple-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-purple-700 transition-colors shadow-sm flex items-center"
+            >
+              <Plus className="w-4 h-4 mr-2" /> บันทึกโน้ตงาน
             </button>
           </div>
         </form>
@@ -420,100 +491,135 @@ function HomeworkDashboard() {
             <CheckCircle className="w-8 h-8 text-green-500" />
           </div>
           <h3 className="text-xl font-semibold text-gray-900 mb-2">เย้! ไม่มีงานค้าง</h3>
-          <p className="text-gray-500">คุณทำเสร็จหมดแล้ว หรือสามารถเพิ่มงานใหม่ได้เลย</p>
+          <p className="text-gray-500 mb-4">คุณทำเสร็จหมดแล้ว หรือสามารถกด "อัปเดตข้อมูลจากครู" เพื่อดึงงานชุดใหม่ได้</p>
+          <button
+            onClick={handleSyncFromTeacher}
+            disabled={syncing}
+            className="inline-flex items-center bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-all shadow-sm active:scale-95 cursor-pointer"
+          >
+            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
+            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
+          </button>
         </div>
       ) : (
-        <>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-          {/* TODO Column */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* 1. TODO Column (ยังไม่ทำ) */}
           <TaskColumn 
             title="ยังไม่ทำ" 
             icon={<BookOpen className="w-5 h-5 text-gray-500" />}
-            tasks={filteredTasks.filter(t => t.status === 'Todo' || t.status === 'Rework')}
-            bgColor="bg-gray-50"
+            tasks={filteredTasks.filter(t => t.status === 'Todo' || t.status === 'Rework' || t.status === 'In Progress')}
+            bgColor="bg-gray-50/80"
             borderColor="border-gray-200"
             headerColor="bg-gray-100"
           >
             {(task: ChildTask) => (
               <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete}>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'In Progress')} className="flex-1 bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-100 active:scale-95 transition-all">
-                    เริ่มทำ
+                  <button 
+                    onClick={() => handleUpdateStatus(task.id!, 'Done')} 
+                    className={clsx(
+                      "flex-1 px-3 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer",
+                      task.status === 'Rework'
+                        ? "bg-rose-600 hover:bg-rose-700 text-white"
+                        : "bg-amber-500 hover:bg-amber-600 text-white"
+                    )}
+                  >
+                    <CheckCircle className="w-4 h-4" /> 
+                    {task.status === 'Rework' ? 'แก้ไขเสร็จแล้ว (รอส่ง)' : 'ทำเสร็จแล้ว (รอส่ง)'}
                   </button>
                 </div>
               </TaskCard>
             )}
           </TaskColumn>
 
-          {/* IN PROGRESS Column */}
-          <TaskColumn 
-            title="กำลังทำ" 
-            icon={<Clock className="w-5 h-5 text-orange-500" />}
-            tasks={filteredTasks.filter(t => t.status === 'In Progress')}
-            bgColor="bg-orange-50/50"
-            borderColor="border-orange-100"
-            headerColor="bg-orange-100/50"
-          >
-            {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Done')} className="flex-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 active:scale-95 transition-all">
-                    ทำเสร็จแล้ว
-                  </button>
-                </div>
-              </TaskCard>
-            )}
-          </TaskColumn>
-
-          {/* DONE Column */}
+          {/* 2. DONE Column (ทำเสร็จ - รอส่ง) */}
           <TaskColumn 
             title="ทำเสร็จ (รอส่ง)" 
-            icon={<CheckCircle className="w-5 h-5 text-blue-500" />}
+            icon={<CheckCircle className="w-5 h-5 text-amber-500" />}
             tasks={filteredTasks.filter(t => t.status === 'Done')}
-            bgColor="bg-blue-50/50"
-            borderColor="border-blue-100"
-            headerColor="bg-blue-100/50"
+            bgColor="bg-amber-50/40"
+            borderColor="border-amber-200/80"
+            headerColor="bg-amber-100/70"
           >
-            {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'In Progress')}>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => handleUpdateStatus(task.id!, 'Submitted')} className="flex-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 active:scale-95 transition-all flex items-center justify-center">
-                    <Send className="w-3 h-3 mr-1.5" /> ส่งครูแล้ว
-                  </button>
-                </div>
-              </TaskCard>
-            )}
+            {(task: ChildTask) => {
+              const isPersonal = !task.teacher_column_id;
+
+              return (
+                <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}>
+                  <div className="flex gap-2 mt-3">
+                    {isPersonal ? (
+                      <button 
+                        onClick={() => handleUpdateStatus(task.id!, 'Verified')} 
+                        className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        title="ตรวจความเรียบร้อยและปิดงานสำเร็จทันที"
+                      >
+                        <CheckCircle2 className="w-4 h-4" /> ตรวจแล้ว (ปิดงานทันที)
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleUpdateStatus(task.id!, 'Submitted')} 
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        title="ส่งครูที่โรงเรียนแล้ว รอครูอัปเดตคะแนนในชีต"
+                      >
+                        <Send className="w-4 h-4" /> ส่งครูแล้ว
+                      </button>
+                    )}
+                  </div>
+                </TaskCard>
+              );
+            }}
           </TaskColumn>
 
-          {/* SUBMITTED Column */}
+          {/* 3. SUBMITTED Column (ส่งแล้ว - รออัปเดต) */}
           <TaskColumn 
-            title="ตรวจแล้ว(รอครูอับเดท)" 
-            icon={<Send className="w-5 h-5 text-green-500" />}
+            title="ส่งแล้ว (รออัปเดต)" 
+            icon={<Send className="w-5 h-5 text-emerald-500" />}
             tasks={filteredTasks.filter(t => t.status === 'Submitted')}
-            bgColor="bg-green-50/50"
-            borderColor="border-green-100"
-            headerColor="bg-green-100/50"
+            bgColor="bg-emerald-50/40"
+            borderColor="border-emerald-200/80"
+            headerColor="bg-emerald-100/70"
           >
-            {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Done')}>
-                <div className="mt-3 mb-1">
-                  {task.teacher_column_id ? (
-                    <span className="text-[10px] sm:text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
-                      จับคู่แล้ว: รอครูอัปเดต
-                    </span>
-                  ) : (
-                    <Link href="/reconcile" className="inline-block text-[10px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition-colors cursor-pointer active:scale-95">
-                      รอคุณจับคู่งาน ➔
-                    </Link>
-                  )}
-                </div>
-              </TaskCard>
-            )}
+            {(task: ChildTask) => {
+              const isPersonal = !task.teacher_column_id;
+
+              return (
+                <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Done')}>
+                  <div className="mt-3 mb-1">
+                    {task.teacher_column_id ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                          <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                            <span>⏳</span> รอครูติ๊กตรวจใน Google Sheet
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleUpdateStatus(task.id!, 'Rework')}
+                          className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 px-3 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                          title="ครูให้กลับมาแก้ไขใหม่ ดีดกลับไปช่องยังไม่ทำ"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-500" /> ↩️ ครูให้แก้ไข (ดีดกลับไปทำใหม่)
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between bg-purple-50 p-2.5 rounded-xl border border-purple-200">
+                        <span className="text-xs font-bold text-purple-700 flex items-center">
+                          <CheckCircle2 className="w-4 h-4 mr-1 text-purple-600" /> ตรวจเรียบร้อย (โน้ตส่วนตัว)
+                        </span>
+                        <button 
+                          onClick={() => handleUpdateStatus(task.id!, 'Verified')}
+                          className="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg font-bold hover:bg-purple-700 active:scale-95 transition-all cursor-pointer"
+                          title="ปิดงานสมบูรณ์"
+                        >
+                          ปิดงาน
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </TaskCard>
+              );
+            }}
           </TaskColumn>
         </div>
-        
-
-        </>
       )}
     </div>
   );
@@ -560,6 +666,8 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
   const [editDate, setEditDate] = useState(task.date || '');
   const [editNote, setEditNote] = useState(task.note || '');
 
+  const isPersonal = !task.teacher_column_id;
+
   const handleSaveEdit = () => {
     const trimmedName = editName.trim();
     if (trimmedName && (trimmedName !== task.task_name || editDate !== task.date || editNote !== task.note)) {
@@ -571,37 +679,56 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
   return (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
       {task.status === 'Rework' && (
-        <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg z-10">
-          ต้องแก้!
+        <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-bl-xl z-10 shadow-xs flex items-center gap-1">
+          <span>🚨</span> ต้องแก้!
         </div>
       )}
-      <div className="flex justify-between items-start mb-1">
-        <div className="text-xs font-semibold text-indigo-600">{task.subject}</div>
+      
+      <div className="flex justify-between items-start mb-2 gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-semibold text-indigo-600 bg-indigo-50/80 px-2 py-0.5 rounded-md">
+            {task.subject}
+          </span>
+          {isPersonal ? (
+            <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60">
+              📝 ส่วนตัว
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60">
+              📋 ชีตครู
+            </span>
+          )}
+        </div>
+
         {!isEditing && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white pl-1">
             {onUndo && (
               <button 
                 onClick={() => onUndo(task)}
-                className="text-gray-400 hover:text-orange-600 p-1 rounded hover:bg-orange-50"
+                className="text-gray-400 hover:text-orange-600 p-1 rounded hover:bg-orange-50 cursor-pointer"
                 title="ดึงกลับมา"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             )}
-            <button 
-              onClick={() => setIsEditing(true)}
-              className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
-              title="แก้ไขชื่องาน"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button 
-              onClick={() => onDelete(task.id)}
-              className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-              title="ลบงาน"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {isPersonal && (
+              <>
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 cursor-pointer"
+                  title="แก้ไขชื่องาน"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button 
+                  onClick={() => onDelete(task.id)}
+                  className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 cursor-pointer"
+                  title="ลบงาน"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

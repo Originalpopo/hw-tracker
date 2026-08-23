@@ -1,13 +1,43 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCcw, LayoutGrid, CheckCircle2, AlertCircle, Search, ArrowRightLeft, XCircle, Edit2, X, Save, DownloadCloud, Filter, StickyNote, Trash2 } from 'lucide-react';
-import { ChildTask, TeacherColumn, getChildTasks, getTeacherColumns, updateChildTask, addChildTask, getGlobalSettings, deleteChildTask } from '@/lib/db';
-import Fuse from 'fuse.js';
+import { 
+  RefreshCcw, 
+  LayoutGrid, 
+  CheckCircle2, 
+  AlertCircle, 
+  Search, 
+  Edit2, 
+  X, 
+  Save, 
+  Filter, 
+  StickyNote, 
+  Trash2, 
+  Link2, 
+  Unlink, 
+  BookOpen, 
+  Sparkles, 
+  CheckCircle,
+  ArrowRight,
+  Clock,
+  HelpCircle
+} from 'lucide-react';
+import { 
+  ChildTask, 
+  TeacherColumn, 
+  TaskStatus,
+  getChildTasks, 
+  getTeacherColumns, 
+  updateChildTask, 
+  addChildTask,
+  getGlobalSettings, 
+  deleteChildTask 
+} from '@/lib/db';
+import confetti from 'canvas-confetti';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 
-export default function ReconcilePage() {
+export default function TaskHubPage() {
   const [studentName, setStudentName] = useState<string | null>(null);
   const [childTasks, setChildTasks] = useState<ChildTask[]>([]);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
@@ -15,34 +45,31 @@ export default function ReconcilePage() {
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
 
-  // For manual mapping
-  const [selectedChildTask, setSelectedChildTask] = useState<string | null>(null);
-  const [manualTeacherColId, setManualTeacherColId] = useState<string>('');
-  const [importing, setImporting] = useState(false);
-  
-  // For editing task details
+  // Filter & Search state
+  const [filterSubject, setFilterSubject] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Link Modal State: Anchor is Teacher Column!
+  const [selectedTeacherColToLink, setSelectedTeacherColToLink] = useState<TeacherColumn | null>(null);
+  const [targetPersonalTaskId, setTargetPersonalTaskId] = useState<string>('');
+
+  // Editing state for personal note
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTaskName, setEditTaskName] = useState('');
   const [editTaskDate, setEditTaskDate] = useState('');
   const [editTaskNote, setEditTaskNote] = useState('');
 
-  // Filter state
-  const [filterSubject, setFilterSubject] = useState<string>('All');
-  
   useEffect(() => {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
-      const oldUrl = localStorage.getItem('hw_sheet_url');
       
-      if (!savedName || (!savedUrlsStr && !oldUrl)) {
-        const globalSettings = await getGlobalSettings();
-        if (globalSettings) {
-          savedName = globalSettings.student_name;
-          savedUrlsStr = globalSettings.sheet_urls;
-          localStorage.setItem('hw_student_name', savedName);
-          localStorage.setItem('hw_sheet_urls', savedUrlsStr);
-        }
+      const globalSettings = await getGlobalSettings();
+      if (globalSettings) {
+        savedName = globalSettings.student_name || savedName;
+        savedUrlsStr = globalSettings.sheet_urls || savedUrlsStr;
+        if (savedName) localStorage.setItem('hw_student_name', savedName);
+        if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
       }
 
       setStudentName(savedName || null);
@@ -50,8 +77,6 @@ export default function ReconcilePage() {
       let urls: string[] = [];
       if (savedUrlsStr) {
         urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
-      } else if (oldUrl) {
-        urls = [oldUrl];
       }
       setSheetUrls(urls);
 
@@ -99,125 +124,246 @@ export default function ReconcilePage() {
       });
       if (res.ok) {
         await loadData(studentName);
+      } else {
+        alert('เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheet');
       }
     } catch (error) {
       console.error('Sync error:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
     } finally {
       setSyncing(false);
     }
   };
 
-  // Derived states
+  const handleSubjectChange = (subject: string) => {
+    setFilterSubject(subject);
+    localStorage.setItem('hw_filter_subject', subject);
+  };
+
+  // Unique subjects across both datasets
   const uniqueSubjects = useMemo(() => {
-    const subs = new Set([...childTasks.map(t => t.subject), ...teacherCols.map(c => c.subject)]);
-    return Array.from(subs).sort();
-  }, [childTasks, teacherCols]);
+    const subjects = new Set<string>();
+    teacherCols.forEach(c => subjects.add(c.subject));
+    childTasks.forEach(t => subjects.add(t.subject));
+    return Array.from(subjects).sort();
+  }, [teacherCols, childTasks]);
 
-  const filteredChildTasks = useMemo(() => {
-    if (filterSubject === 'All') return childTasks;
-    return childTasks.filter(t => t.subject === filterSubject);
-  }, [childTasks, filterSubject]);
+  // STRICTLY Personal Tasks ONLY
+  const allPersonalTasks = useMemo(() => {
+    return childTasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id));
+  }, [childTasks]);
 
-  const filteredTeacherCols = useMemo(() => {
-    let cols = teacherCols;
-    if (filterSubject !== 'All') {
-      cols = teacherCols.filter(c => c.subject === filterSubject);
-    }
-    return [...cols].sort((a, b) => (b.sequence || 0) - (a.sequence || 0));
-  }, [teacherCols, filterSubject]);
+  // Map of teacher column ID -> Linked Personal Task
+  const teacherColToPersonalTaskMap = useMemo(() => {
+    const map = new Map<string, ChildTask>();
+    allPersonalTasks.forEach(task => {
+      if (task.teacher_column_id) {
+        map.set(task.teacher_column_id, task);
+      }
+    });
+    return map;
+  }, [allPersonalTasks]);
 
-  const latestBatchPerSubject = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const col of teacherCols) {
-      if (col.first_seen_at) {
-        const current = map.get(col.subject) || 0;
-        if (col.first_seen_at > current) {
-          map.set(col.subject, col.first_seen_at);
-        }
+  // Left Side: Pending/Unfinished Teacher Tasks ONLY (ตัดงานที่ครูตรวจแล้วออก)
+  const pendingTeacherCols = useMemo(() => {
+    return teacherCols.filter(col => {
+      // แสดงเฉพาะงานที่ครู "ยังไม่ตรวจ" (is_checked === false)
+      if (col.is_checked) return false;
+
+      if (filterSubject !== 'All' && col.subject !== filterSubject) return false;
+      if (searchQuery.trim() && !col.column_name.toLowerCase().includes(searchQuery.toLowerCase()) && !col.subject.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => {
+      if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
+      return (a.sequence || 0) - (b.sequence || 0); // เรียงตามลำดับชิ้นงาน
+    });
+  }, [teacherCols, filterSubject, searchQuery]);
+
+  // Right Side: Filtered Personal Tasks
+  const filteredPersonalTasks = useMemo(() => {
+    return allPersonalTasks.filter(task => {
+      if (filterSubject !== 'All' && task.subject !== filterSubject) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = task.task_name.toLowerCase().includes(q);
+        const matchesSub = task.subject.toLowerCase().includes(q);
+        const matchesNote = (task.note || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesSub && !matchesNote) return false;
+      }
+      return true;
+    }).sort((a, b) => {
+      const timeA = (a.created_at as any)?.toMillis?.() || 0;
+      const timeB = (b.created_at as any)?.toMillis?.() || 0;
+      return timeB - timeA;
+    });
+  }, [allPersonalTasks, filterSubject, searchQuery]);
+
+  // Suggest matching personal note for a teacher column
+  const getAutoSuggestedNote = (col: TeacherColumn) => {
+    const candidates = allPersonalTasks.filter(t => t.subject === col.subject && !t.teacher_column_id);
+    if (candidates.length === 0) return null;
+
+    const colLower = col.column_name.toLowerCase().replace(/[^a-zA-Z0-9ก-๙]/g, '');
+    
+    // Look for best match
+    for (const note of candidates) {
+      const noteLower = note.task_name.toLowerCase().replace(/[^a-zA-Z0-9ก-๙]/g, '');
+      if (colLower.includes(noteLower) || noteLower.includes(colLower)) {
+        return note;
       }
     }
-    return map;
-  }, [teacherCols]);
+    return candidates[0]; // fallback to first note in same subject
+  };
 
-  const pendingTasks = filteredChildTasks.filter(t => t.status === 'Submitted' && !t.teacher_column_id);
-  const mappedTasks = filteredChildTasks.filter(t => t.teacher_column_id && t.status === 'Submitted');
+  // Open Link Modal from Teacher Column
+  const handleOpenLinkModal = (col: TeacherColumn) => {
+    setSelectedTeacherColToLink(col);
+    const suggested = getAutoSuggestedNote(col);
+    setTargetPersonalTaskId(suggested ? suggested.id! : '');
+  };
 
-  // Setup Fuse.js for fuzzy search
-  const fuse = useMemo(() => new Fuse(teacherCols, {
-    keys: ['column_name', 'subject'],
-    threshold: 0.4,
-    includeScore: true
-  }), [teacherCols]);
+  // Confirm Link (Teacher Column is MASTER -> Personal Note is linked as secondary source)
+  const handleConfirmLink = async () => {
+    if (!selectedTeacherColToLink || !targetPersonalTaskId || !studentName) return;
 
-  const handleLink = async (childTaskId: string, teacherColId: string) => {
-    if (!studentName) return;
-    const col = teacherCols.find(c => c.id === teacherColId);
-    if (!col) return;
+    const personalNote = allPersonalTasks.find(t => t.id === targetPersonalTaskId);
+    if (!personalNote) return;
 
     try {
-      const newStatus = col.is_checked ? 'Verified' : 'Submitted';
-      
-      await updateChildTask(childTaskId, {
-        teacher_column_id: teacherColId,
-        status: newStatus
+      // 1. Determine status of the Official Teacher Task based on personal note progress
+      let officialStatus: TaskStatus = 'Submitted';
+      if (personalNote.status === 'Todo' || personalNote.status === 'Rework') {
+        officialStatus = 'Todo';
+      } else {
+        // Child already completed the personal note -> Advance teacher task to 'Submitted' (ส่งแล้ว - รออัปเดต)
+        officialStatus = 'Submitted';
+      }
+
+      // 2. Ensure Official Teacher Task exists and is set to officialStatus with Teacher's official name (MASTER)
+      let officialTask = childTasks.find(t => t.teacher_column_id === selectedTeacherColToLink.id && t.task_type === 'official');
+      if (officialTask && officialTask.id) {
+        await updateChildTask(officialTask.id, {
+          task_name: selectedTeacherColToLink.column_name, // Teacher's name is MASTER
+          subject: selectedTeacherColToLink.subject,
+          status: officialStatus,
+          note: personalNote.note || ''
+        });
+      } else {
+        // If official task wasn't in DB yet, create it as official
+        await addChildTask({
+          student_name: studentName,
+          subject: selectedTeacherColToLink.subject,
+          task_name: selectedTeacherColToLink.column_name,
+          teacher_column_id: selectedTeacherColToLink.id,
+          task_type: 'official',
+          status: officialStatus,
+          date: new Date().toISOString().split('T')[0],
+          note: personalNote.note || ''
+        });
+      }
+
+      // 3. Update personal note to link to teacher column and mark as Verified (closed personal note)
+      await updateChildTask(personalNote.id!, {
+        teacher_column_id: selectedTeacherColToLink.id,
+        task_type: 'personal',
+        status: 'Verified'
       });
-      
+
       await loadData(studentName);
-      setSelectedChildTask(null);
-    } catch (error) {
-      console.error('Link error:', error);
-    }
-  };
 
-  const handleReject = async (childTaskId: string) => {
-    try {
-      await updateChildTask(childTaskId, {
-        status: 'Rework',
-        teacher_column_id: null
+      confetti({
+        particleCount: 60,
+        spread: 70,
+        origin: { y: 0.6 }
       });
-      await loadData(studentName!);
+
+      setSelectedTeacherColToLink(null);
+      setTargetPersonalTaskId('');
     } catch (error) {
-      console.error('Reject error:', error);
+      console.error('Error linking task:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมโยงงาน');
     }
   };
 
-  const handleUpdateTask = async (taskId: string) => {
-    if (!editTaskName.trim()) return;
+  // Unlink Action: Reverts Teacher Task back to Todo (Column 1) and Personal Note back to unlinked
+  const handleUnlink = async (personalTask: ChildTask) => {
+    if (!personalTask.id || !personalTask.teacher_column_id || !studentName) return;
+    if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับโน้ต "${personalTask.task_name}" ใช่หรือไม่?`)) return;
+
     try {
-      const updates = { 
-        task_name: editTaskName.trim(), 
-        date: editTaskDate, 
-        note: editTaskNote 
+      const teacherColId = personalTask.teacher_column_id;
+
+      // 1. Revert Official Teacher Task back to 'Todo' in Column 1 with original teacher name
+      const officialTask = childTasks.find(t => t.teacher_column_id === teacherColId && t.task_type === 'official');
+      if (officialTask && officialTask.id) {
+        await updateChildTask(officialTask.id, {
+          status: 'Todo'
+        });
+      }
+
+      // 2. Revert Personal Note back to unlinked personal note (keeps status as Verified in archive, NOT popping up on homework board)
+      await updateChildTask(personalTask.id, {
+        teacher_column_id: null,
+        task_type: 'personal',
+        status: 'Verified'
+      });
+
+      await loadData(studentName);
+    } catch (error) {
+      console.error('Error unlinking task:', error);
+      alert('เกิดข้อผิดพลาดในการยกเลิกการเชื่อมโยง');
+    }
+  };
+
+  // Edit Personal Task
+  const handleStartEdit = (task: ChildTask) => {
+    setEditingTaskId(task.id!);
+    setEditTaskName(task.task_name);
+    setEditTaskDate(task.date || '');
+    setEditTaskNote(task.note || '');
+  };
+
+  const handleSaveEdit = async (taskId: string) => {
+    const trimmed = editTaskName.trim();
+    if (!trimmed) return;
+
+    try {
+      const updates: Partial<ChildTask> = {
+        task_name: trimmed,
+        date: editTaskDate,
+        note: editTaskNote
       };
-      setChildTasks(childTasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
       await updateChildTask(taskId, updates);
+      setChildTasks(childTasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
       setEditingTaskId(null);
     } catch (error) {
-      console.error('Update task error:', error);
-      loadData(studentName!);
+      console.error('Error updating task:', error);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
     }
   };
 
+  // Delete Personal Task
   const handleDeleteTask = async (taskId: string) => {
-    if (!studentName || !window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบงานนี้?')) return;
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบโน้ตงานนี้?")) return;
     try {
-      setChildTasks(childTasks.filter(t => t.id !== taskId));
       await deleteChildTask(taskId);
+      setChildTasks(childTasks.filter(t => t.id !== taskId));
     } catch (error) {
       console.error('Error deleting task:', error);
-      loadData(studentName);
+      alert('เกิดข้อผิดพลาดในการลบงาน');
     }
   };
 
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
-        <div className="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
-          <AlertCircle className="w-12 h-12 text-indigo-500" />
+        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
+          <AlertCircle className="w-12 h-12 text-blue-500" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-4">ยินดีต้อนรับสู่ระบบสอบทานงาน</h2>
+        <h2 className="text-3xl font-bold text-gray-900 mb-4">ยินดีต้อนรับสู่ระบบติดตามงาน</h2>
         <p className="text-gray-500 max-w-md mb-8 text-lg">กรุณาตั้งค่าชื่อนักเรียนก่อนเริ่มใช้งาน</p>
-        <Link href="/settings" className="bg-indigo-600 text-white px-8 py-3 rounded-full font-medium hover:bg-indigo-700 hover:shadow-lg transition-all transform hover:-translate-y-1">
+        <Link href="/settings" className="bg-blue-600 text-white px-8 py-3 rounded-full font-medium hover:bg-blue-700 hover:shadow-lg transition-all transform hover:-translate-y-1">
           ไปหน้าตั้งค่า
         </Link>
       </div>
@@ -227,322 +373,496 @@ export default function ReconcilePage() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 sm:p-6 rounded-2xl gap-4 md:gap-6">
+      {/* Header section adhering to AGENTS.md Standard Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
             <LayoutGrid className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
-            จับคู่งาน (Reconcile)
+            จัดการงาน & เชื่อมโยง (Task Hub)
           </h1>
-          <p className="text-gray-500 mt-1 text-sm sm:text-base">จับคู่งานของลูกกับข้อมูลจากครู เพื่อยืนยันความถูกต้อง</p>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">
+            ศูนย์ตรวจสอบงานครูที่ยังไม่เสร็จ และเชื่อมโยงกับโน้ตส่วนตัวของ {studentName}
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row flex-wrap sm:flex-nowrap items-center gap-3 w-full md:w-auto md:shrink-0 justify-start md:justify-end mt-4 md:mt-0">
+
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="h-[44px] w-full sm:w-auto flex items-center justify-center bg-white border border-gray-300 text-gray-700 px-4 rounded-xl text-sm sm:text-base font-medium hover:bg-gray-50 hover:text-indigo-600 transition-all active:scale-95 whitespace-nowrap"
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
           >
-            <RefreshCcw className={clsx("w-4 h-4 sm:w-5 sm:h-5 mr-2", syncing && "animate-spin")} />
-            {syncing ? 'กำลังดึง...' : 'อัปเดตข้อมูลจากครู'}
+            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
+            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
           </button>
+        </div>
+      </div>
 
-          {/* Filter by Subject */}
-          {(childTasks.length > 0 || teacherCols.length > 0) && (
-            <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm px-3 h-[44px] w-full sm:w-auto">
-              <Filter className="w-4 h-4 text-gray-400 mr-2" />
-              <select
-                value={filterSubject}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setFilterSubject(val);
-                  localStorage.setItem('hw_filter_subject', val);
-                }}
-                className="text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium cursor-pointer w-full"
-              >
-                <option value="All">ทุกวิชา</option>
-                {uniqueSubjects.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
+      {/* KPI Overview Summary (4 Cards) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+            <Clock className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">งานครูที่รอตรวจ/ค้าง</p>
+            <p className="text-xl font-black text-amber-600">{pendingTeacherCols.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl shrink-0">
+            <StickyNote className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">โน้ตส่วนตัวทั้งหมด</p>
+            <p className="text-xl font-black text-purple-600">{allPersonalTasks.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+            <Link2 className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">เชื่อมโยงกับครูแล้ว</p>
+            <p className="text-xl font-black text-emerald-600">{allPersonalTasks.filter(t => !!t.teacher_column_id).length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
+            <Sparkles className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-medium">โน้ตอิสระ (ยังไม่ผูก)</p>
+            <p className="text-xl font-black text-blue-600">{allPersonalTasks.filter(t => !t.teacher_column_id).length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar (Subject Filter and Search Bar) */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        
+        {/* Subject Filter Dropdown */}
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-400 shrink-0" />
+          <select
+            value={filterSubject}
+            onChange={(e) => handleSubjectChange(e.target.value)}
+            className="bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="All">🌟 ทุกวิชา ({uniqueSubjects.length} วิชา)</option>
+            {uniqueSubjects.map(sub => (
+              <option key={sub} value={sub}>{sub}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="ค้นหาชื่องาน หรือข้อความโน้ต..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-gray-400"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       </div>
 
+      {/* Main Split View (2 Columns) */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+        <div className="flex justify-center py-16">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
         </div>
       ) : (
-        <>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center bg-white py-3 px-4 rounded-xl border border-gray-100 shadow-sm">
-              <span className="bg-indigo-100 text-indigo-800 w-8 h-8 rounded-full flex items-center justify-center mr-3 font-bold">1</span>
-              งานที่ลูกส่งแล้ว (รอจับคู่)
-            </h2>
-            
-            {pendingTasks.length === 0 ? (
-              <div className="bg-white/50 border border-dashed border-gray-200 rounded-xl p-8 text-center">
-                <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-2" />
-                <p className="text-gray-500">ไม่มีงานที่รอจับคู่</p>
+          {/* ======================================================== */}
+          {/* LEFT SIDE: งานจากชีตครูที่ยังไม่เสร็จ (ตัวตั้งในการผูกงาน) */}
+          {/* ======================================================== */}
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200 shadow-sm flex flex-col h-full">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+                  📋
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">งานครูที่ยังไม่เสร็จ (ตัวตั้ง)</h2>
+                  <p className="text-xs text-gray-400">เฉพาะงานที่ครูยังไม่ติ๊กตรวจใน Google Sheet</p>
+                </div>
               </div>
-            ) : (
-              pendingTasks.map(task => {
-                const results = fuse.search(task.task_name);
-                const recommendations = results.slice(0, 2).map(r => r.item);
+              <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+                {pendingTeacherCols.length} รายการ
+              </span>
+            </div>
 
-                return (
-                  <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:border-indigo-300 transition-colors group">
-                    <div className="mb-3">
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{task.subject}</span>
-                        {editingTaskId !== task.id && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => {
-                                setEditingTaskId(task.id!);
-                                setEditTaskName(task.task_name);
-                                setEditTaskDate(task.date || '');
-                                setEditTaskNote(task.note || '');
-                              }}
-                              className="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
-                              title="แก้ไขงาน"
+            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1 scrollbar-hover">
+              {pendingTeacherCols.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-gray-400 text-sm">
+                  🎉 ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้
+                </div>
+              ) : (
+                pendingTeacherCols.map(col => {
+                  const linkedPersonalTask = teacherColToPersonalTaskMap.get(col.id);
+
+                  return (
+                    <div 
+                      key={col.id}
+                      className={clsx(
+                        "p-4 rounded-2xl border transition-all duration-200 relative group",
+                        linkedPersonalTask ? "bg-emerald-50/40 border-emerald-300" : "bg-gray-50/80 border-gray-200 hover:border-blue-300 hover:bg-white"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-md">
+                            {col.subject}
+                          </span>
+                          {col.sequence && (
+                            <span className="text-[11px] font-mono font-black text-gray-600 bg-white border border-gray-200 px-1.5 py-0.2 rounded">
+                              #{col.sequence}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-800 shadow-2xs">
+                          ⏳ รอครูตรวจ
+                        </span>
+                      </div>
+
+                      <p className="font-bold text-gray-900 text-sm leading-snug mb-3">
+                        {col.column_name}
+                      </p>
+
+                      {/* Linking Footer & Action Button (Teacher is Anchor) */}
+                      <div className="pt-2.5 border-t border-gray-200/70 flex items-center justify-between gap-2">
+                        {linkedPersonalTask ? (
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-1 text-emerald-800 font-semibold text-xs truncate mr-2">
+                              <Link2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                              <span className="truncate">ผูกกับโน้ต: <strong>{linkedPersonalTask.task_name}</strong></span>
+                            </div>
+                            <button
+                              onClick={() => handleUnlink(linkedPersonalTask)}
+                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0 transition-colors cursor-pointer"
+                              title="ยกเลิกการเชื่อมโยง"
+                            >
+                              <Unlink className="w-3 h-3 inline mr-1" /> ยกเลิกผูก
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleOpenLinkModal(col)}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Link2 className="w-3.5 h-3.5" /> 🔗 ผูกกับโน้ตส่วนตัว...
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* RIGHT SIDE: โน้ตส่วนตัวทั้งหมด (Personal Notes Archive) */}
+          {/* ======================================================== */}
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200 shadow-sm flex flex-col h-full">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-sm">
+                  📝
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">โน้ตส่วนตัว & ประวัติงาน (Personal Only)</h2>
+                  <p className="text-xs text-gray-400">เฉพาะโน้ตที่เพิ่มเอง (ดูประวัติและแก้ไข)</p>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full">
+                {filteredPersonalTasks.length} รายการ
+              </span>
+            </div>
+
+            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1 scrollbar-hover">
+              {filteredPersonalTasks.length === 0 ? (
+                <div className="text-center py-12 bg-purple-50/40 rounded-2xl border border-dashed border-purple-200 text-gray-400 text-sm">
+                  <StickyNote className="w-8 h-8 mx-auto mb-2 text-purple-300" />
+                  ยังไม่มีโน้ตส่วนตัวในหมวดนี้
+                  <p className="text-xs text-gray-400 mt-1">คุณสามารถเพิ่มโน้ตใหม่ได้ที่หน้า "การบ้านของฉัน"</p>
+                </div>
+              ) : (
+                filteredPersonalTasks.map(task => {
+                  const isLinked = !!task.teacher_column_id;
+                  const isEditing = editingTaskId === task.id;
+                  const linkedCol = isLinked ? teacherCols.find(c => c.id === task.teacher_column_id) : null;
+
+                  return (
+                    <div 
+                      key={task.id}
+                      className={clsx(
+                        "p-4 rounded-2xl border transition-all duration-200 relative group",
+                        isLinked ? "bg-emerald-50/30 border-emerald-200" : "bg-purple-50/30 border-purple-200/80 hover:bg-white"
+                      )}
+                    >
+                      {/* Top Badges */}
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-md text-purple-700 bg-purple-100/70">
+                            {task.subject}
+                          </span>
+                          
+                          {isLinked ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300 flex items-center gap-1">
+                              <Link2 className="w-2.5 h-2.5" /> ผูกกับงานครูแล้ว
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                              ⚪ โน้ตอิสระ
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status Badge */}
+                        <span className={clsx(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 shadow-2xs",
+                          task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-blue-100 text-blue-800" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : "bg-gray-100 text-gray-700"
+                        )}>
+                          {task.status === 'Verified' ? '🏆 ตรวจเสร็จแล้ว' : task.status === 'Done' ? '⏳ ทำเสร็จ-รอส่ง' : task.status === 'Submitted' ? '📤 ส่งแล้ว-รออัปเดต' : '📝 ยังไม่ทำ'}
+                        </span>
+                      </div>
+
+                      {/* Content / Edit Form */}
+                      {isEditing ? (
+                        <div className="my-2 space-y-2">
+                          <textarea
+                            value={editTaskName}
+                            onChange={(e) => setEditTaskName(e.target.value)}
+                            className="w-full text-sm font-semibold text-gray-900 border border-purple-300 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none bg-white"
+                            rows={2}
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="date"
+                              value={editTaskDate}
+                              onChange={(e) => setEditTaskDate(e.target.value)}
+                              className="text-xs text-gray-700 border border-purple-200 rounded-lg p-2 bg-white"
+                            />
+                            <input
+                              type="text"
+                              placeholder="โน้ตเพิ่มเติม..."
+                              value={editTaskNote}
+                              onChange={(e) => setEditTaskNote(e.target.value)}
+                              className="text-xs text-gray-700 border border-purple-200 rounded-lg p-2 bg-white"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2 pt-1">
+                            <button onClick={() => setEditingTaskId(null)} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-semibold cursor-pointer">
+                              ยกเลิก
+                            </button>
+                            <button onClick={() => handleSaveEdit(task.id!)} className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                              <Save className="w-3 h-3" /> บันทึก
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="my-1.5">
+                          <p className="font-bold text-gray-900 text-sm leading-snug">
+                            {task.task_name}
+                          </p>
+
+                          {(task.date || task.note) && (
+                            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                              {task.date && <span>📅 {task.date}</span>}
+                              {task.note && <span className="text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">โน้ต: {task.note}</span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Linking Info / Actions */}
+                      <div className="mt-2.5 pt-2 border-t border-gray-200/60 flex items-center justify-between text-xs">
+                        {isLinked && linkedCol ? (
+                          <span className="text-emerald-800 font-medium truncate">
+                            ผูกกับงานครู: <strong>{linkedCol.column_name}</strong> {linkedCol.sequence ? `(#${linkedCol.sequence})` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-medium">
+                            โน้ตส่วนตัวอิสระ
+                          </span>
+                        )}
+
+                        {!isEditing && (
+                          <div className="flex items-center gap-1 shrink-0 ml-2">
+                            <button
+                              onClick={() => handleStartEdit(task)}
+                              className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                              title="แก้ไขข้อความโน้ต"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleDeleteTask(task.id!)}
-                              className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                              title="ลบงาน"
+                              className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="ลบโน้ตนี้"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         )}
                       </div>
-                      
-                      {editingTaskId === task.id ? (
-                        <div className="mb-2">
-                          <textarea
-                            value={editTaskName}
-                            onChange={(e) => setEditTaskName(e.target.value)}
-                            className="w-full text-sm font-medium text-gray-900 border border-indigo-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-2"
-                            rows={2}
-                            autoFocus
-                          />
-                          <input 
-                            type="date"
-                            value={editTaskDate}
-                            onChange={(e) => setEditTaskDate(e.target.value)}
-                            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                          <input 
-                            type="text"
-                            value={editTaskNote}
-                            onChange={(e) => setEditTaskNote(e.target.value)}
-                            placeholder="โน้ตเพิ่มเติม..."
-                            className="w-full text-sm text-gray-600 border border-indigo-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                          <div className="flex justify-end gap-1 mt-2">
-                            <button onClick={() => setEditingTaskId(null)} className="p-1 text-gray-400 hover:text-gray-600">
-                              <X className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleUpdateTask(task.id!)} className="p-1 text-green-600 hover:text-green-700">
-                              <Save className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mb-2">
-                          <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
-                          {(task.date || task.note) && (
-                            <div className="flex items-center mt-1 space-x-2">
-                              {task.date && <p className="text-xs text-gray-400">{task.date}</p>}
-                              {task.note && (
-                                <div className="relative group/note cursor-help flex items-center">
-                                  <StickyNote className="w-3.5 h-3.5 text-yellow-500" />
-                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
-                                    {task.note}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
-
-                    {recommendations.length > 0 && (
-                      <div className="mt-4 bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
-                        <p className="text-xs font-semibold text-indigo-600 flex items-center mb-3">
-                          <Search className="w-3 h-3 mr-1" /> แนะนำการจับคู่ที่คล้ายกัน
-                        </p>
-                        <div className="space-y-2">
-                          {recommendations.map(rec => (
-                            <div key={rec.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-indigo-50 shadow-sm text-sm">
-                              <div className="flex-1 min-w-0 pr-3">
-                                <p className="text-gray-800 font-medium truncate">{rec.column_name}</p>
-                                <p className="text-xs text-gray-500">
-                                  สถานะครู: <span className={rec.is_checked ? "text-green-600 font-bold" : "text-amber-500 font-bold"}>
-                                    {rec.is_checked ? 'ส่งแล้ว (ติ๊กถูก)' : 'ยังไม่ส่ง/ต้องแก้'}
-                                  </span>
-                                </p>
-                              </div>
-                              <button
-                                onClick={() => handleLink(task.id!, rec.id)}
-                                className="shrink-0 bg-indigo-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-indigo-700 transition-colors"
-                              >
-                                จับคู่
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {recommendations.length === 0 && (
-                      <div className="mt-3 text-sm text-gray-500 flex items-center mb-3">
-                        <AlertCircle className="w-4 h-4 mr-1 text-amber-500" /> ไม่มีงานที่คล้ายกันจากครู
-                      </div>
-                    )}
-
-                    <div className="mt-3 border-t border-gray-100 pt-3">
-                      {selectedChildTask === task.id ? (
-                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">เลือกงานของครูจากรายการทั้งหมด:</label>
-                          <select 
-                            value={manualTeacherColId}
-                            onChange={(e) => setManualTeacherColId(e.target.value)}
-                            className="w-full p-2 mb-2 text-sm bg-white border border-gray-300 rounded-lg outline-none focus:border-indigo-500"
-                          >
-                            <option value="" disabled>-- เลือกงาน --</option>
-                            {filteredTeacherCols.map(col => {
-                              let prefix = '';
-                              if (col.first_seen_at && col.first_seen_at === latestBatchPerSubject.get(col.subject)) {
-                                prefix = col.is_checked ? '🏆 ' : '🔥 ';
-                              }
-                              return (
-                                <option key={col.id} value={col.id}>
-                                  {prefix}[{col.subject}] {col.sequence ? col.sequence + '. ' : ''}{col.column_name} {col.is_checked ? '(✓)' : ''}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <div className="flex justify-end gap-2">
-                            <button 
-                              onClick={() => setSelectedChildTask(null)}
-                              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
-                            >
-                              ยกเลิก
-                            </button>
-                            <button 
-                              disabled={!manualTeacherColId}
-                              onClick={() => {
-                                handleLink(task.id!, manualTeacherColId);
-                                setManualTeacherColId('');
-                              }}
-                              className="bg-indigo-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                              ยืนยันจับคู่
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button 
-                          onClick={() => {
-                            setSelectedChildTask(task.id!);
-                            setManualTeacherColId('');
-                          }}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
-                        >
-                          + ค้นหาและจับคู่เอง (Manual)
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-
-
-
-          </div>
-
-          <div className="space-y-4">
-             <div className="flex items-center justify-between bg-white py-3 px-4 rounded-xl border border-gray-100 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-                  <span className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-full flex items-center justify-center mr-3 font-bold">2</span>
-                  ข้อมูลทั้งหมดจากครู
-                </h2>
-             </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="max-h-[600px] overflow-y-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ชื่องาน (ครู)</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">สถานะ</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredTeacherCols.map((col) => {
-                      const linkedTask = childTasks.find(t => t.teacher_column_id === col.id);
-                      const isSubmittedOrDone = linkedTask && ['Done', 'Submitted', 'Verified'].includes(linkedTask.status);
-                      
-                      let bgColor = "bg-orange-100/80 text-orange-800";
-                      let icon = "🔥";
-                      let text = "รอส่ง / ยังไม่เสร็จ";
-
-                      if (col.is_checked) {
-                        bgColor = "bg-green-100 text-green-800";
-                        icon = "🏆";
-                        text = "ครูตรวจแล้ว";
-                      } else if (isSubmittedOrDone) {
-                        bgColor = "bg-blue-100 text-blue-800";
-                        icon = "⏳";
-                        text = "ส่งแล้ว (รอครูตรวจ)";
-                      }
-
-                      return (
-                      <tr key={col.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="text-xs font-semibold text-indigo-600 mb-0.5">{col.subject}</div>
-                          <div className="text-sm text-gray-900 font-medium whitespace-normal break-words max-w-[300px] md:max-w-[400px]">
-                            {col.sequence ? col.sequence + '. ' : ''}{col.column_name}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-2">
-                            {col.first_seen_at && col.first_seen_at === latestBatchPerSubject.get(col.subject) && (
-                              <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 uppercase tracking-wider">
-                                NEW
-                              </span>
-                            )}
-                            <span className={clsx("inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-black/5 shadow-sm", bgColor)}>
-                              <span className="mr-1.5 text-sm">{icon}</span> {text}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                    {filteredTeacherCols.length === 0 && (
-                      <tr>
-                        <td colSpan={2} className="px-6 py-8 text-center text-gray-500 text-sm">
-                          ไม่มีข้อมูล ลองกด "อัปเดตข้อมูลจากครู"
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
         </div>
-        </>
       )}
+
+      {/* Linking Modal (Teacher Column -> Select Personal Note with Auto Suggest) */}
+      {selectedTeacherColToLink && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setSelectedTeacherColToLink(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-gray-100 relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button 
+              onClick={() => setSelectedTeacherColToLink(null)}
+              className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center text-2xl shadow-inner">
+                🔗
+              </div>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                  เชื่อมโยงงานครูกับโน้ตส่วนตัว
+                </span>
+                <h3 className="text-lg font-extrabold text-gray-900 mt-1">เลือกโน้ตที่คุณเคยจดไว้</h3>
+              </div>
+            </div>
+
+            {/* Target Teacher Column Summary (Anchor) */}
+            <div className="bg-blue-50/70 p-3.5 rounded-2xl border border-blue-200 mb-4 text-xs">
+              <p className="text-blue-600 font-bold mb-0.5">งานของครูในชีต (ตัวตั้ง):</p>
+              <p className="font-bold text-gray-900 text-sm">{selectedTeacherColToLink.column_name}</p>
+              <p className="text-gray-500 mt-1">วิชา: <strong className="text-blue-700">{selectedTeacherColToLink.subject}</strong> {selectedTeacherColToLink.sequence ? `(ลำดับ #${selectedTeacherColToLink.sequence})` : ''}</p>
+            </div>
+
+            {/* Select Target Personal Note */}
+            <div className="space-y-2 mb-6">
+              <label className="block text-xs font-bold text-gray-700">
+                เลือกโน้ตส่วนตัวในวิชา {selectedTeacherColToLink.subject} เพื่อผูกเข้าด้วยกัน:
+              </label>
+              
+              {(() => {
+                const availableNotes = allPersonalTasks.filter(t => t.subject === selectedTeacherColToLink.subject);
+                const suggestedNote = getAutoSuggestedNote(selectedTeacherColToLink);
+
+                if (availableNotes.length === 0) {
+                  return (
+                    <div className="text-xs text-gray-400 py-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                      <p className="font-medium text-gray-500 mb-1">ยังไม่มีโน้ตส่วนตัวในวิชา {selectedTeacherColToLink.subject}</p>
+                      <p className="text-[11px]">งานนี้จะเป็นงานเดี่ยวจากชีตครูตามปกติ</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-hover">
+                    {availableNotes.map(note => {
+                      const isSelected = targetPersonalTaskId === note.id;
+                      const isSuggested = suggestedNote?.id === note.id;
+                      const isAlreadyLinked = !!note.teacher_column_id;
+
+                      return (
+                        <div
+                          key={note.id}
+                          onClick={() => setTargetPersonalTaskId(note.id!)}
+                          className={clsx(
+                            "p-3 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer transition-all relative",
+                            isSelected 
+                              ? "bg-purple-50 border-purple-500 ring-2 ring-purple-400/50 shadow-xs" 
+                              : isSuggested
+                                ? "bg-amber-50/50 border-amber-300 hover:bg-amber-50"
+                                : isAlreadyLinked
+                                  ? "bg-gray-50/60 border-gray-200 opacity-60"
+                                  : "bg-white border-gray-200 hover:border-purple-300 hover:bg-purple-50/20"
+                          )}
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden mr-2">
+                            <input 
+                              type="radio" 
+                              name="targetPersonalTask" 
+                              checked={isSelected}
+                              onChange={() => setTargetPersonalTaskId(note.id!)}
+                              className="cursor-pointer text-purple-600"
+                            />
+                            <div className="truncate">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-gray-900 truncate font-bold">{note.task_name}</span>
+                                {isSuggested && (
+                                  <span className="text-[9px] font-extrabold bg-amber-400 text-amber-950 px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shrink-0 shadow-2xs">
+                                    <Sparkles className="w-2.5 h-2.5" /> แนะนำ
+                                  </span>
+                                )}
+                              </div>
+                              {note.date && <p className="text-[10px] text-gray-400 mt-0.5">📅 {note.date}</p>}
+                            </div>
+                          </div>
+
+                          <span className={clsx(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                            note.status === 'Verified' ? "bg-emerald-100 text-emerald-800" : note.status === 'Done' ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"
+                          )}>
+                            {note.status === 'Verified' ? '✓ ตรวจแล้ว' : note.status === 'Done' ? '⏳ ทำเสร็จ' : '📝 ยังไม่ทำ'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleConfirmLink}
+                disabled={!targetPersonalTaskId}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
+              >
+                <Link2 className="w-4 h-4" /> ยืนยันการเชื่อมโยง
+              </button>
+              <button
+                onClick={() => setSelectedTeacherColToLink(null)}
+                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

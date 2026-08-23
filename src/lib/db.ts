@@ -29,6 +29,7 @@ export interface ChildTask {
   student_name: string; // The child's name for filtering
   date?: string; // Date of the task (e.g., YYYY-MM-DD)
   note?: string; // Additional details for the task
+  task_type?: 'official' | 'personal'; // Type of task: official from Google Sheet or personal note
 }
 
 export interface TeacherColumn {

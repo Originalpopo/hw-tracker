@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
-import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Layers, Zap, ListTodo } from 'lucide-react';
+import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Zap, ListTodo, Columns3, Rows3 } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
 
@@ -14,8 +14,22 @@ export default function AllTasksV2Page() {
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
   
-  // Filter & View Options
+  // Filter & Layout View Options
+  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [hideCompleted, setHideCompleted] = useState(false);
+  
+  // Floating Tooltip State (bypasses overflow clipping)
+  const [hoveredTask, setHoveredTask] = useState<{
+    x: number;
+    y: number;
+    isBottom: boolean;
+    subject: string;
+    seq: number;
+    name: string;
+    statusText: string;
+  } | null>(null);
+
+  // Modal Details State
   const [selectedTaskModal, setSelectedTaskModal] = useState<{
     subject: string;
     seq: number;
@@ -28,6 +42,10 @@ export default function AllTasksV2Page() {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
+      const savedLayout = localStorage.getItem('hw_all_tasks_layout_mode') as 'vertical' | 'horizontal' | null;
+      if (savedLayout === 'vertical' || savedLayout === 'horizontal') {
+        setLayoutMode(savedLayout);
+      }
       
       const globalSettings = await getGlobalSettings();
       if (globalSettings) {
@@ -53,6 +71,11 @@ export default function AllTasksV2Page() {
     };
     init();
   }, []);
+
+  const handleLayoutChange = (mode: 'vertical' | 'horizontal') => {
+    setLayoutMode(mode);
+    localStorage.setItem('hw_all_tasks_layout_mode', mode);
+  };
 
   const loadData = async (name: string) => {
     setLoading(true);
@@ -102,6 +125,15 @@ export default function AllTasksV2Page() {
     return statusMap;
   }, [childTasks]);
 
+  // Dynamic progress text color helper matching Dashboard
+  const getProgressColorClass = (percent: number) => {
+    if (percent === 100) return 'text-emerald-600 font-extrabold';
+    if (percent >= 75) return 'text-lime-600 font-bold';
+    if (percent >= 50) return 'text-amber-500 font-bold';
+    if (percent >= 25) return 'text-orange-500 font-bold';
+    return 'text-rose-500 font-bold';
+  };
+
   // Overall statistics for top summary banner
   const stats = useMemo(() => {
     let checkedCount = 0;
@@ -135,7 +167,7 @@ export default function AllTasksV2Page() {
     return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
   }, [teacherCols, mappedTeacherColStatus]);
 
-  // Group into Top-Aligned Equalizer Stacks per Subject
+  // Group into Stacks per Subject
   const subjectStacks = useMemo(() => {
     const sMap = new Map<string, TeacherColumn[]>();
 
@@ -161,7 +193,7 @@ export default function AllTasksV2Page() {
 
     Array.from(sMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(subject => {
       const list = [...sMap.get(subject)!];
-      // Sort tasks within each subject: Newest (highest sequence) at top (index 0) ➔ Oldest at bottom
+      // Sort tasks within each subject: Newest (highest sequence) at top/first (index 0) ➔ Oldest at end
       list.sort((a, b) => (b.sequence || 0) - (a.sequence || 0));
 
       let checked = 0;
@@ -216,26 +248,82 @@ export default function AllTasksV2Page() {
     );
   }
 
+  // Render individual task tile helper
+  const renderTaskTile = (col: TeacherColumn, stackSubject: string) => {
+    const seq = col.sequence || 0;
+    const mappedStatus = mappedTeacherColStatus.get(col.id);
+    const isMapped = mappedStatus !== undefined;
+    const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+
+    let cardBg = "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs";
+    const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
+    let icon = isOld ? "🔥" : "📝";
+    let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
+    let statusText = isOld ? "งานค้างเกิน 3 วัน (ยังไม่ส่ง)" : "งานใหม่ (ยังไม่ส่ง)";
+
+    if (col.is_checked) {
+      cardBg = "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300/80";
+      icon = "🏆";
+      statusKey = 'Checked';
+      statusText = "ครูตรวจแล้วเรียบร้อย";
+    } else if (isSubmittedOrDone) {
+      cardBg = "bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-300 shadow-xs";
+      icon = "⏳";
+      statusKey = 'WaitingTeacher';
+      statusText = "เด็กส่งแล้ว (รอครูอัปเดตคะแนน)";
+    } else if (isOld) {
+      cardBg = "bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-300 shadow-xs";
+    }
+
+    return (
+      <div
+        key={col.id}
+        onClick={() => {
+          setHoveredTask(null);
+          setSelectedTaskModal({
+            subject: stackSubject,
+            seq,
+            col,
+            status: statusKey,
+            statusText
+          });
+        }}
+        onMouseEnter={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const showBelow = rect.top < 130;
+          setHoveredTask({
+            x: rect.left + rect.width / 2,
+            y: showBelow ? rect.bottom + 8 : rect.top - 8,
+            isBottom: showBelow,
+            subject: stackSubject,
+            seq,
+            name: col.column_name,
+            statusText
+          });
+        }}
+        onMouseLeave={() => setHoveredTask(null)}
+        className={clsx(
+          "relative rounded-xl h-[44px] sm:h-[48px] w-[44px] sm:w-[48px] shrink-0 border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
+          cardBg
+        )}
+      >
+        {/* Sequence Number */}
+        <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
+          #{seq}
+        </span>
+
+        {/* Status Icon */}
+        <span className="text-sm sm:text-base leading-none mt-0.5 drop-shadow-2xs">
+          {icon}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      {/* View Version Switcher Tabs */}
-      <div className="flex items-center justify-between bg-gray-100 p-1.5 rounded-2xl w-full sm:w-max">
-        <Link 
-          href="/all-tasks"
-          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-semibold rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/50 transition-all text-center"
-        >
-          📊 ตารางแนวนอนเดิม
-        </Link>
-        <span 
-          className="flex-1 sm:flex-initial px-4 py-2 text-sm font-bold rounded-xl bg-white text-blue-700 shadow-sm transition-all flex items-center justify-center gap-1.5"
-        >
-          <Sparkles className="w-4 h-4 text-blue-600" />
-          🆕 Compact EQ (ชื่อวิชาแนวตั้ง 2 แถว)
-        </span>
-      </div>
-
-      {/* Header section (Matches /homework standard) */}
+      {/* Header section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
@@ -243,16 +331,46 @@ export default function AllTasksV2Page() {
             งานทั้งหมด (All Tasks)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            ตารางแสดงสถานะงานทุกวิชาอ้างอิงจากข้อมูลของครู • งานใหม่อยู่ด้านบนสุด
+            ตารางแสดงสถานะงานทุกวิชาอ้างอิงจากข้อมูลของครู • งานใหม่อยู่ลำดับแรกสุด
           </p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+          {/* Layout Mode Switcher (Vertical vs Horizontal) */}
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 shadow-inner w-full sm:w-auto justify-center">
+            <button
+              onClick={() => handleLayoutChange('vertical')}
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer",
+                layoutMode === 'vertical'
+                  ? "bg-white text-blue-700 shadow-xs font-bold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+              title="แสดงแบบตารางแนวตั้ง (แต่ละวิชาเป็นคอลัมน์)"
+            >
+              <Columns3 className="w-4 h-4" />
+              <span>แนวตั้ง</span>
+            </button>
+            <button
+              onClick={() => handleLayoutChange('horizontal')}
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer",
+                layoutMode === 'horizontal'
+                  ? "bg-white text-blue-700 shadow-xs font-bold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+              title="แสดงแบบตารางแนวนอน (แต่ละวิชาเป็นแถวเรียงไปทางขวา)"
+            >
+              <Rows3 className="w-4 h-4" />
+              <span>แนวนอน</span>
+            </button>
+          </div>
+
           {/* Toggle Hide Completed Tasks */}
           <button
             onClick={() => setHideCompleted(!hideCompleted)}
             className={clsx(
-              "h-[42px] px-4 rounded-xl text-sm font-medium border flex items-center transition-all active:scale-95",
+              "h-[42px] px-4 rounded-xl text-sm font-medium border flex items-center transition-all active:scale-95 w-full sm:w-auto justify-center cursor-pointer",
               hideCompleted 
                 ? "bg-blue-50 border-blue-200 text-blue-700 shadow-inner font-bold" 
                 : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm"
@@ -266,15 +384,15 @@ export default function AllTasksV2Page() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50"
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
           >
             <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
-            {syncing ? 'กำลังดึง...' : 'อัปเดตข้อมูลจากครู'}
+            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
           </button>
         </div>
       </div>
 
-      {/* KPI Summary Cards (5 Cards including Total Tasks) */}
+      {/* KPI Summary Cards (5 Cards) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Total Tasks Card */}
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
@@ -332,7 +450,7 @@ export default function AllTasksV2Page() {
         </div>
       </div>
 
-      {/* Main Ultra-Compact Equalizer Grid */}
+      {/* Main Equalizer Grid (Supports Vertical & Horizontal Layouts) */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
@@ -354,134 +472,139 @@ export default function AllTasksV2Page() {
             </div>
           </div>
 
-          {/* Compact Columns Container */}
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
+          {/* ======================================================== */}
+          {/* MODE 1: VERTICAL LAYOUT (Subjects as Vertical Columns) */}
+          {/* ======================================================== */}
+          {layoutMode === 'vertical' && (
+            <div className="overflow-x-auto pb-4 scrollbar-hover">
+              <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
+                {subjectStacks.map((stack) => {
+                  const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
+
+                  return (
+                    <div 
+                      key={stack.subject}
+                      className="w-[66px] sm:w-[76px] flex flex-col bg-gray-50/60 border border-gray-200/90 rounded-2xl p-1.5 shadow-2xs relative"
+                    >
+                      {/* Vertical Rotated Subject Header */}
+                      <div className="bg-white rounded-xl py-2.5 px-1 border border-gray-200 shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden">
+                        {/* Mini Status Badge on Top */}
+                        <div className="z-10">
+                          <span className={clsx(
+                            "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
+                            stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                          )}>
+                            {stack.pending > 0 ? `-${stack.pending}` : '✓'}
+                          </span>
+                        </div>
+
+                        {/* Rotated Subject Text (Truncates with ... when long, anchored to bottom) */}
+                        <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
+                          <span 
+                            className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
+                            title={stack.subject}
+                          >
+                            {stack.subject}
+                          </span>
+                        </div>
+
+                        {/* Total count & Progress bar with gradient matching Dashboard */}
+                        <div className="w-full flex flex-col items-center pt-1.5 border-t border-gray-100 z-10">
+                          <div className="flex items-center justify-between w-full px-0.5 text-[9px] sm:text-[10px]">
+                            <span className="font-bold text-gray-500 font-mono leading-none">
+                              {stack.total}
+                            </span>
+                            <span className={clsx("font-mono leading-none", getProgressColorClass(stack.progress))}>
+                              {stack.progress}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div 
+                              className={clsx(
+                                "h-full transition-all duration-700 rounded-full",
+                                stack.progress === 100 
+                                  ? "bg-emerald-500" 
+                                  : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
+                              )}
+                              style={{ width: `${stack.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Compact Task Tiles (Vertical Stack: Newest on Top) */}
+                      <div className="flex flex-col gap-1.5">
+                        {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
+
+                        {visibleTasks.length === 0 && (
+                          <div className="py-4 text-center text-[10px] text-gray-400 font-bold bg-white/50 rounded-xl border border-dashed border-gray-200">
+                            ครบ ✨
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* MODE 2: HORIZONTAL LAYOUT (Subjects as Horizontal Rows) */}
+          {/* ======================================================== */}
+          {layoutMode === 'horizontal' && (
+            <div className="flex flex-col gap-3 w-full">
               {subjectStacks.map((stack) => {
                 const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                 return (
                   <div 
                     key={stack.subject}
-                    className="w-[66px] sm:w-[76px] flex flex-col bg-gray-50/60 border border-gray-200/90 rounded-2xl p-1.5 shadow-xs hover:border-blue-400 transition-all group/col relative hover:z-30"
+                    className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-gray-50/60 border border-gray-200/90 rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
                   >
-                    {/* Vertical 2-Line Rotated Subject Header (Airy & Taller) */}
-                    <div className="bg-white rounded-xl py-2.5 px-1 border border-gray-200 shadow-xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden group-hover/col:shadow-sm transition-all">
-                      {/* Mini Status Badge on Top */}
-                      <div className="z-10">
-                        <span className={clsx(
-                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
-                          stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                        )}>
-                          {stack.pending > 0 ? `-${stack.pending}` : '✓'}
-                        </span>
-                      </div>
-
-                      {/* Rotated Subject Text: Airy, taller, supports 2 lines gracefully */}
-                      <div className="flex-1 flex items-center justify-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden">
-                        <span 
-                          className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-[1.1] [writing-mode:vertical-rl] rotate-180 max-h-[115px] sm:max-h-[135px] inline-block text-center"
-                          title={stack.subject}
-                          style={{
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word'
-                          }}
-                        >
+                    {/* Horizontal Subject Info Card (Left) */}
+                    <div className="w-full md:w-[220px] shrink-0 bg-white rounded-xl p-3 border border-gray-200 shadow-2xs flex flex-row md:flex-col justify-between items-center md:items-start gap-2">
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-sm font-black text-gray-900 tracking-tight line-clamp-1" title={stack.subject}>
                           {stack.subject}
                         </span>
+                        <span className={clsx(
+                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 shadow-2xs ml-2",
+                          stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                        )}>
+                          {stack.pending > 0 ? `-${stack.pending}` : '✓ ครบ'}
+                        </span>
                       </div>
 
-                      {/* Total count & mini progress at bottom */}
-                      <div className="w-full flex flex-col items-center pt-1.5 border-t border-gray-100 z-10">
-                        <span className="text-[10px] font-bold text-gray-500 font-mono leading-none">
-                          {stack.total}
+                      <div className="w-full flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-100 md:border-t-0 md:pt-0">
+                        <span className="text-[11px] font-medium text-gray-500">
+                          ทั้งหมด: <strong className="text-gray-800">{stack.total}</strong> ชิ้น
                         </span>
-                        <div className="w-full bg-gray-100 rounded-full h-1 mt-1 overflow-hidden">
-                          <div 
-                            className={clsx("h-full transition-all duration-700", stack.progress === 100 ? "bg-emerald-500" : "bg-blue-600")}
-                            style={{ width: `${stack.progress}%` }}
-                          />
-                        </div>
+                        <span className={clsx("text-xs font-mono font-black", getProgressColorClass(stack.progress))}>
+                          {stack.progress}%
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden shadow-inner">
+                        <div 
+                          className={clsx(
+                            "h-full transition-all duration-700 rounded-full",
+                            stack.progress === 100 
+                              ? "bg-emerald-500" 
+                              : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
+                          )}
+                          style={{ width: `${stack.progress}%` }}
+                        />
                       </div>
                     </div>
 
-                    {/* Compact Task Tiles (Newest on Top) */}
-                    <div className="flex flex-col gap-1.5">
-                      {visibleTasks.map((col, index) => {
-                        const seq = col.sequence || 0;
-                        const isTopLatest = index === 0;
-
-                        // Determine status
-                        const mappedStatus = mappedTeacherColStatus.get(col.id);
-                        const isMapped = mappedStatus !== undefined;
-                        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
-
-                        let cardBg = "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs";
-                        const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
-                        let icon = isOld ? "🔥" : "📝";
-                        let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
-                        let statusText = isOld ? "งานค้างเกิน 3 วัน (ยังไม่ส่ง)" : "งานใหม่ (ยังไม่ส่ง)";
-
-                        if (col.is_checked) {
-                          cardBg = "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300/80";
-                          icon = "🏆";
-                          statusKey = 'Checked';
-                          statusText = "ครูตรวจแล้วเรียบร้อย";
-                        } else if (isSubmittedOrDone) {
-                          cardBg = "bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-300 shadow-xs";
-                          icon = "⏳";
-                          statusKey = 'WaitingTeacher';
-                          statusText = "เด็กส่งแล้ว (รอครูอัปเดตคะแนน)";
-                        } else if (isOld) {
-                          cardBg = "bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-300 shadow-xs";
-                        }
-
-                        return (
-                          <div
-                            key={col.id}
-                            onClick={() => setSelectedTaskModal({
-                              subject: stack.subject,
-                              seq,
-                              col,
-                              status: statusKey,
-                              statusText
-                            })}
-                            className={clsx(
-                              "relative group/tile hover:z-50 rounded-xl h-[44px] sm:h-[48px] border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
-                              cardBg,
-                              isTopLatest && !col.is_checked && "ring-2 ring-rose-400 ring-offset-1"
-                            )}
-                          >
-                            {/* Sequence Number */}
-                            <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
-                              #{seq}
-                            </span>
-
-                            {/* Status Icon */}
-                            <span className="text-sm sm:text-base leading-none mt-0.5 drop-shadow-2xs">
-                              {icon}
-                            </span>
-
-                            {/* Hover Tooltip Floating Preview (Ultra High Z-Index) */}
-                            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max max-w-[240px] bg-gray-950 text-white text-xs p-3 rounded-2xl opacity-0 group-hover/tile:opacity-100 pointer-events-none transition-all duration-150 z-[100] shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5)] border border-gray-700 ring-1 ring-white/10">
-                              <p className="font-extrabold text-amber-300 text-[11px] mb-1 flex items-center gap-1">
-                                <span>{stack.subject}</span>
-                                <span>•</span>
-                                <span>#{seq}</span>
-                              </p>
-                              <p className="font-semibold text-gray-100 leading-snug mb-1.5 text-xs">{col.column_name}</p>
-                              <div className="pt-1 border-t border-gray-800 text-[10px] text-gray-400 font-medium">
-                                {statusText}
-                              </div>
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-6 border-transparent border-t-gray-950"></div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    {/* Task Tiles Strip (Horizontal scrollable row: Newest on Left) */}
+                    <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1.5 px-1 min-w-0 scrollbar-hover">
+                      {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
 
                       {visibleTasks.length === 0 && (
-                        <div className="py-4 text-center text-[10px] text-gray-400 font-bold bg-white/50 rounded-xl border border-dashed border-gray-200">
-                          ครบ ✨
+                        <div className="py-2.5 px-4 text-xs text-gray-400 font-bold bg-white/60 rounded-xl border border-dashed border-gray-200 flex items-center">
+                          ✨ ส่งครบเรียบร้อยแล้ว
                         </div>
                       )}
                     </div>
@@ -489,7 +612,36 @@ export default function AllTasksV2Page() {
                 );
               })}
             </div>
+          )}
+
+        </div>
+      )}
+
+      {/* Floating Tooltip Portal (Never clipped by overflow or table borders) */}
+      {hoveredTask && (
+        <div 
+          className="fixed z-[99999] pointer-events-none transition-opacity duration-150 shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5)] border border-gray-700 ring-1 ring-white/10 bg-gray-950 text-white text-xs p-3 rounded-2xl w-max max-w-[260px] animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            left: `${hoveredTask.x}px`,
+            top: `${hoveredTask.y}px`,
+            transform: hoveredTask.isBottom ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+          }}
+        >
+          <p className="font-extrabold text-amber-300 text-[11px] mb-1 flex items-center gap-1">
+            <span>{hoveredTask.subject}</span>
+            <span>•</span>
+            <span>#{hoveredTask.seq}</span>
+          </p>
+          <p className="font-semibold text-gray-100 leading-snug mb-1.5 text-xs">{hoveredTask.name}</p>
+          <div className="pt-1 border-t border-gray-800 text-[10px] text-gray-400 font-medium">
+            {hoveredTask.statusText}
           </div>
+          <div className={clsx(
+            "absolute left-1/2 -translate-x-1/2 border-6 border-transparent",
+            hoveredTask.isBottom 
+              ? "bottom-full border-b-gray-950" 
+              : "top-full border-t-gray-950"
+          )} />
         </div>
       )}
 

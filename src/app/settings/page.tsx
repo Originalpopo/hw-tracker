@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, UserCircle, RefreshCcw, CheckCircle2 } from 'lucide-react';
-import { getGlobalSettings, saveGlobalSettings } from '@/lib/db';
+import { Save, UserCircle, RefreshCcw, CheckCircle2, Trash2, AlertTriangle, X, ShieldAlert } from 'lucide-react';
+import { getGlobalSettings, saveGlobalSettings, clearAllChildTasks } from '@/lib/db';
 
 export default function SettingsPage() {
   const [students, setStudents] = useState<string[]>([]);
@@ -13,6 +13,11 @@ export default function SettingsPage() {
   const [appPinHint, setAppPinHint] = useState<string>('ค่าเริ่มต้น: 0411');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // Danger Zone / Clear DB state
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearSuccess, setClearSuccess] = useState(false);
 
   const fetchStudents = async (url: string) => {
     if (!url) {
@@ -82,8 +87,6 @@ export default function SettingsPage() {
     init();
   }, []);
 
-
-
   const handleSave = async () => {
     const urls = sheetUrls.split('\n').map(u => u.trim()).filter(Boolean);
     if (!selectedStudent || urls.length === 0) {
@@ -114,8 +117,30 @@ export default function SettingsPage() {
     window.dispatchEvent(new Event('storage'));
   };
 
+  const handleClearDatabase = async () => {
+    if (!selectedStudent) {
+      setError('กรุณาเลือกชื่อนักเรียนก่อนทำการล้างข้อมูล');
+      setShowClearModal(false);
+      return;
+    }
+
+    setClearing(true);
+    try {
+      // Clear ONLY child tasks for this student in Firestore
+      await clearAllChildTasks(selectedStudent);
+      setClearSuccess(true);
+      setShowClearModal(false);
+      setTimeout(() => setClearSuccess(false), 4000);
+    } catch (err) {
+      console.error('Error clearing tasks:', err);
+      setError('เกิดข้อผิดพลาดในการล้างข้อมูลงาน');
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-16">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-3 bg-indigo-50 rounded-xl">
@@ -128,8 +153,11 @@ export default function SettingsPage() {
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm mb-6">
-            เกิดข้อผิดพลาด: {error}
+          <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm mb-6 flex items-center justify-between">
+            <span>เกิดข้อผิดพลาด: {error}</span>
+            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-700">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -251,6 +279,97 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Danger Zone: Clear Tasks Database */}
+      <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6 sm:p-8">
+        <div className="flex items-start space-x-3">
+          <div className="p-3 bg-red-50 text-red-600 rounded-xl shrink-0">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-bold text-gray-900">จัดการข้อมูล (Danger Zone)</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              ล้างรายการงานการบ้านทั้งหมดที่คีย์ไว้ในระบบของนักเรียนที่เลือก เพื่อเริ่มต้นดึงข้อมูลจาก Google Sheet ของครูแบบใหม่หมดจด
+            </p>
+            
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mt-3 text-xs text-amber-800 flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>รับประกันความปลอดภัย:</strong> ลิงก์ Google Sheet, รายชื่อนักเรียน, รหัส PIN และการตั้งค่าทั้งหมดในหน้านี้จะ<strong>ไม่ถูกลบ</strong>
+              </span>
+            </div>
+
+            {clearSuccess && (
+              <div className="mt-4 p-3 bg-green-50 text-green-700 rounded-xl text-sm flex items-center font-medium border border-green-200 animate-in fade-in">
+                <CheckCircle2 className="w-5 h-5 mr-2 text-green-600 shrink-0" />
+                ล้างข้อมูลรายการงานการบ้านของ {selectedStudent} เรียบร้อยแล้ว!
+              </div>
+            )}
+
+            <div className="mt-5">
+              <button
+                onClick={() => setShowClearModal(true)}
+                disabled={!selectedStudent || clearing}
+                className="flex items-center justify-center py-2.5 px-4 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-600 hover:text-white hover:border-transparent transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                ล้างข้อมูลงานการบ้าน ({selectedStudent || 'ยังไม่เลือกนักเรียน'})
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Confirmation Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-gray-100 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto text-red-600">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            
+            <div className="text-center space-y-2">
+              <h3 className="text-xl font-bold text-gray-900">ยืนยันการล้างข้อมูลงาน?</h3>
+              <p className="text-sm text-gray-500">
+                คุณกำลังจะลบรายการงานการบ้านทั้งหมดของ <strong className="text-gray-800">{selectedStudent}</strong> ออกจาก Database
+              </p>
+              <div className="bg-gray-50 p-3 rounded-xl text-xs text-gray-600 text-left space-y-1 mt-3">
+                <p className="font-semibold text-gray-700">สิ่งที่เกิดขึ้น:</p>
+                <p>• รายการงานการบ้านทั้งหมดจะถูกล้างออกจากระบบ</p>
+                <p>• ลิงก์ Google Sheet, รายชื่อ และ PIN จะยังคงอยู่ครบถ้วน</p>
+                <p>• คุณสามารถกด Sync เพื่อดึงงานชุดใหม่จากครูได้ทันที</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearModal(false)}
+                disabled={clearing}
+                className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl text-sm transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleClearDatabase}
+                disabled={clearing}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center shadow-sm"
+              >
+                {clearing ? (
+                  <>
+                    <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+                    กำลังล้างข้อมูล...
+                  </>
+                ) : (
+                  'ยืนยันการล้างข้อมูล'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

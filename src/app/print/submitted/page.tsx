@@ -124,11 +124,11 @@ export default function PrintSubmittedPage() {
                 <tbody>
                   {tasks.map((task) => (
                     <tr key={task.id}>
-                      <td className="border border-black py-2.5 px-3 align-top leading-tight w-full">
-                        {task.task_name}
+                      <td className="border border-black w-12 text-center align-middle p-2 shrink-0">
+                        <div className="w-5 h-5 border-2 border-black mx-auto"></div>
                       </td>
-                      <td className="border border-black w-16 text-center align-middle p-2">
-                        <div className="w-6 h-6 border-2 border-black mx-auto"></div>
+                      <td className="border border-black py-2.5 px-3 align-middle leading-snug w-full font-medium">
+                        {task.task_name}
                       </td>
                     </tr>
                   ))}
