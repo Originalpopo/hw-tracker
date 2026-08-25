@@ -1,10 +1,22 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Noto_Sans_Thai, Inter } from "next/font/google";
 import "./globals.css";
 import AuthWrapper from "@/components/AuthWrapper";
 import AppLayout from "@/components/AppLayout";
 
-const inter = Inter({ subsets: ["latin"] });
+const notoSansThai = Noto_Sans_Thai({
+  subsets: ["thai", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-noto-thai",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Homework Tracker & Reconciliation",
@@ -17,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className="h-full bg-white">
-      <body className={`${inter.className} h-full overflow-x-hidden pb-20 md:pb-0 bg-white text-gray-900`}>
+    <html lang="th" className={`h-full bg-[#f4f7fa] ${notoSansThai.variable} ${inter.variable}`}>
+      <body className="font-sans h-full overflow-x-hidden pb-20 md:pb-0 bg-[#f4f7fa] text-black antialiased">
         <AuthWrapper>
           <AppLayout>
             {children}

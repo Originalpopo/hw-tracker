@@ -141,14 +141,18 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-16">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+      <div className="bg-white rounded-3xl shadow-sm border border-[#e2e8f0] p-6 sm:p-8">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="p-3 bg-indigo-50 rounded-xl">
-            <UserCircle className="w-6 h-6 text-indigo-600" />
+          <div className="p-3 bg-[#eef3fc] rounded-2xl">
+            <UserCircle className="w-6 h-6 text-[#597ecf]" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">ตั้งค่าผู้ใช้งาน</h1>
-            <p className="text-sm text-gray-500">เลือกว่าคุณคือใคร เพื่อให้ระบบดึงงานได้ถูกต้อง</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
+              ตั้งค่าระบบ (Settings)
+            </h1>
+            <p className="text-gray-500 mt-1 text-sm sm:text-base">
+              เลือกว่าคุณคือใคร และตั้งค่าลิงก์ Google Sheet ของครู
+            </p>
           </div>
         </div>
 

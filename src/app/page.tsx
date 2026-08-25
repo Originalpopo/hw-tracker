@@ -150,20 +150,20 @@ export default function DashboardOverview() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Hero Welcome Card */}
-      <div className="bg-gradient-to-br from-blue-400 to-blue-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-br from-[#597ecf] via-[#4a6fb8] to-[#434c60] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-4 animate-float">
           <Trophy className="w-48 h-48" />
         </div>
         <div className="relative z-10">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-2">
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Hi. {studentName}! 🚀
+              Hi, {studentName}! 🚀
             </h1>
-            <Link href="/homework" className="bg-white text-blue-700 px-6 py-3 rounded-xl font-bold hover:bg-blue-50 hover:scale-105 transition-all duration-300 shadow-md hover:shadow-xl active:scale-95 flex items-center w-max shrink-0 group z-20">
-              <Zap className="w-5 h-5 mr-2 text-orange-500 group-hover:animate-pulse" /> ลุยภารกิจเลย!
+            <Link href="/homework" className="bg-white text-[#597ecf] px-6 py-3 rounded-xl font-bold hover:bg-[#eef3fc] hover:scale-105 transition-all duration-300 shadow-md hover:shadow-xl active:scale-95 flex items-center w-max shrink-0 group z-20">
+              <Zap className="w-5 h-5 mr-2 text-amber-500 group-hover:animate-pulse" /> ลุยภารกิจเลย!
             </Link>
           </div>
-          <p className="text-blue-100 text-lg max-w-lg">
+          <p className="text-blue-50 text-base sm:text-lg max-w-lg">
             พร้อมทำภารกิจประจำวันหรือยัง? เคลียร์ภารกิจให้หมดเพื่อรับพลังงานเต็มหลอด!
           </p>
         </div>
@@ -173,11 +173,11 @@ export default function DashboardOverview() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Progress Card (Spans 3 columns on desktop) */}
-        <div className="md:col-span-3 bg-white rounded-3xl p-6 sm:p-8 flex flex-col justify-center">
+        <div className="md:col-span-3 bg-white rounded-3xl p-6 sm:p-8 flex flex-col justify-center border border-[#e2e8f0] shadow-xs">
           <div className="flex justify-between items-end mb-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-800 flex items-center">
-                <Target className={clsx("w-6 h-6 mr-2", progressPercent === 100 ? "text-green-500" : "text-orange-500")} />
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <Target className={clsx("w-6 h-6 mr-2", progressPercent === 100 ? "text-emerald-500" : "text-amber-500")} />
                 พลังงานภารกิจ (ความคืบหน้า)
               </h2>
               <p className="text-sm text-gray-500 mt-1">ทำไปแล้ว {completedTasks} จาก {totalTasks} ภารกิจ</p>
@@ -187,9 +187,9 @@ export default function DashboardOverview() {
             </div>
           </div>
           
-          <div className="w-full bg-gray-100 rounded-full h-6 shadow-inner mt-2 relative">
+          <div className="w-full bg-[#f1f3f6] rounded-full h-6 shadow-inner mt-2 relative">
             <div 
-              className={clsx("h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative", progressPercent === 100 ? "bg-gradient-to-r from-green-400 to-green-500" : "bg-gradient-to-r from-orange-300 via-amber-400 to-green-500")}
+              className={clsx("h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative", progressPercent === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-gradient-to-r from-amber-400 via-sky-400 to-[#597ecf]")}
               style={{ width: animateBars ? `${progressPercent}%` : '0%' }}
             >
               {progressPercent > 0 && (
@@ -204,30 +204,30 @@ export default function DashboardOverview() {
         {/* 3 Stats Cards Row */}
         
         {/* Total Tasks Card */}
-        <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute -right-4 -bottom-4 text-blue-50 opacity-80">
+        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 text-[#eef3fc] opacity-80">
             <ListTodo className="w-32 h-32" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-lg font-bold text-gray-800 flex items-center">
-              <ListTodo className="w-5 h-5 mr-2 text-blue-500" />
+            <h3 className="text-base font-bold text-gray-900 flex items-center">
+              <ListTodo className="w-5 h-5 mr-2 text-[#597ecf]" />
               ภารกิจทั้งหมด
             </h3>
             <p className="text-gray-500 text-sm mt-1">งานที่ได้รับมอบหมาย</p>
             <div className="mt-4 flex items-baseline">
-              <span className="text-5xl font-black text-blue-600">{totalTasks}</span>
+              <span className="text-5xl font-black text-[#597ecf]">{totalTasks}</span>
               <span className="ml-2 text-lg text-gray-400">งาน</span>
             </div>
           </div>
         </div>
 
         {/* Pending Tasks Card */}
-        <div className="bg-gradient-to-br from-orange-300 to-orange-500 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden text-white">
+        <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden text-white">
           <div className="absolute -right-4 -bottom-4 opacity-20">
             <Flame className="w-32 h-32" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-lg font-bold opacity-90 flex items-center">
+            <h3 className="text-base font-bold opacity-90 flex items-center">
               <Zap className="w-5 h-5 mr-2" />
               ภารกิจที่ต้องเคลียร์!
             </h3>
@@ -240,12 +240,12 @@ export default function DashboardOverview() {
         </div>
 
         {/* Done Stats */}
-        <div className="bg-gradient-to-br from-blue-400 to-blue-700 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden text-white">
+        <div className="bg-gradient-to-br from-[#597ecf] to-[#434c60] rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden text-white">
           <div className="absolute -right-4 -bottom-4 opacity-20">
             <Star className="w-32 h-32" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-lg font-bold opacity-90 flex items-center">
+            <h3 className="text-base font-bold opacity-90 flex items-center">
               <Star className="w-5 h-5 mr-2" />
               เก็บดาวได้แล้ว
             </h3>

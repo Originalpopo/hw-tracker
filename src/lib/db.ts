@@ -30,6 +30,7 @@ export interface ChildTask {
   date?: string; // Date of the task (e.g., YYYY-MM-DD)
   note?: string; // Additional details for the task
   task_type?: 'official' | 'personal'; // Type of task: official from Google Sheet or personal note
+  tags?: string[]; // Custom tags e.g. ['งานในคาบ', 'การบ้าน']
 }
 
 export interface TeacherColumn {

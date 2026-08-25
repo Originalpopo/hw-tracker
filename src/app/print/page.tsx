@@ -6,10 +6,10 @@ export default function PrintHubPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
       {/* Standard Website Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
-            <Printer className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
+            <Printer className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
             พิมพ์ใบงาน (Print Hub)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">

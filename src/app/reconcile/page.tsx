@@ -20,7 +20,9 @@ import {
   CheckCircle,
   ArrowRight,
   Clock,
-  HelpCircle
+  HelpCircle,
+  GraduationCap,
+  Home
 } from 'lucide-react';
 import { 
   ChildTask, 
@@ -58,6 +60,7 @@ export default function TaskHubPage() {
   const [editTaskName, setEditTaskName] = useState('');
   const [editTaskDate, setEditTaskDate] = useState('');
   const [editTaskNote, setEditTaskNote] = useState('');
+  const [editTaskTags, setEditTaskTags] = useState<string[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -143,8 +146,8 @@ export default function TaskHubPage() {
   // Unique subjects across both datasets
   const uniqueSubjects = useMemo(() => {
     const subjects = new Set<string>();
-    teacherCols.forEach(c => subjects.add(c.subject));
-    childTasks.forEach(t => subjects.add(t.subject));
+    teacherCols.forEach(c => { if (c.subject?.trim()) subjects.add(c.subject.trim()); });
+    childTasks.forEach(t => { if (t.subject?.trim()) subjects.add(t.subject.trim()); });
     return Array.from(subjects).sort();
   }, [teacherCols, childTasks]);
 
@@ -167,15 +170,13 @@ export default function TaskHubPage() {
   // Left Side: Pending/Unfinished Teacher Tasks ONLY (ตัดงานที่ครูตรวจแล้วออก)
   const pendingTeacherCols = useMemo(() => {
     return teacherCols.filter(col => {
-      // แสดงเฉพาะงานที่ครู "ยังไม่ตรวจ" (is_checked === false)
       if (col.is_checked) return false;
-
       if (filterSubject !== 'All' && col.subject !== filterSubject) return false;
       if (searchQuery.trim() && !col.column_name.toLowerCase().includes(searchQuery.toLowerCase()) && !col.subject.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     }).sort((a, b) => {
       if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
-      return (a.sequence || 0) - (b.sequence || 0); // เรียงตามลำดับชิ้นงาน
+      return (a.sequence || 0) - (b.sequence || 0);
     });
   }, [teacherCols, filterSubject, searchQuery]);
 
@@ -206,14 +207,13 @@ export default function TaskHubPage() {
 
     const colLower = col.column_name.toLowerCase().replace(/[^a-zA-Z0-9ก-๙]/g, '');
     
-    // Look for best match
     for (const note of candidates) {
       const noteLower = note.task_name.toLowerCase().replace(/[^a-zA-Z0-9ก-๙]/g, '');
       if (colLower.includes(noteLower) || noteLower.includes(colLower)) {
         return note;
       }
     }
-    return candidates[0]; // fallback to first note in same subject
+    return candidates[0];
   };
 
   // Open Link Modal from Teacher Column
@@ -231,26 +231,22 @@ export default function TaskHubPage() {
     if (!personalNote) return;
 
     try {
-      // 1. Determine status of the Official Teacher Task based on personal note progress
       let officialStatus: TaskStatus = 'Submitted';
       if (personalNote.status === 'Todo' || personalNote.status === 'Rework') {
         officialStatus = 'Todo';
       } else {
-        // Child already completed the personal note -> Advance teacher task to 'Submitted' (ส่งแล้ว - รออัปเดต)
         officialStatus = 'Submitted';
       }
 
-      // 2. Ensure Official Teacher Task exists and is set to officialStatus with Teacher's official name (MASTER)
       let officialTask = childTasks.find(t => t.teacher_column_id === selectedTeacherColToLink.id && t.task_type === 'official');
       if (officialTask && officialTask.id) {
         await updateChildTask(officialTask.id, {
-          task_name: selectedTeacherColToLink.column_name, // Teacher's name is MASTER
+          task_name: selectedTeacherColToLink.column_name,
           subject: selectedTeacherColToLink.subject,
           status: officialStatus,
           note: personalNote.note || ''
         });
       } else {
-        // If official task wasn't in DB yet, create it as official
         await addChildTask({
           student_name: studentName,
           subject: selectedTeacherColToLink.subject,
@@ -263,7 +259,6 @@ export default function TaskHubPage() {
         });
       }
 
-      // 3. Update personal note to link to teacher column and mark as Verified (closed personal note)
       await updateChildTask(personalNote.id!, {
         teacher_column_id: selectedTeacherColToLink.id,
         task_type: 'personal',
@@ -286,7 +281,7 @@ export default function TaskHubPage() {
     }
   };
 
-  // Unlink Action: Reverts Teacher Task back to Todo (Column 1) and Personal Note back to unlinked
+  // Unlink Action
   const handleUnlink = async (personalTask: ChildTask) => {
     if (!personalTask.id || !personalTask.teacher_column_id || !studentName) return;
     if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับโน้ต "${personalTask.task_name}" ใช่หรือไม่?`)) return;
@@ -294,7 +289,6 @@ export default function TaskHubPage() {
     try {
       const teacherColId = personalTask.teacher_column_id;
 
-      // 1. Revert Official Teacher Task back to 'Todo' in Column 1 with original teacher name
       const officialTask = childTasks.find(t => t.teacher_column_id === teacherColId && t.task_type === 'official');
       if (officialTask && officialTask.id) {
         await updateChildTask(officialTask.id, {
@@ -302,7 +296,6 @@ export default function TaskHubPage() {
         });
       }
 
-      // 2. Revert Personal Note back to unlinked personal note (keeps status as Verified in archive, NOT popping up on homework board)
       await updateChildTask(personalTask.id, {
         teacher_column_id: null,
         task_type: 'personal',
@@ -322,6 +315,7 @@ export default function TaskHubPage() {
     setEditTaskName(task.task_name);
     setEditTaskDate(task.date || '');
     setEditTaskNote(task.note || '');
+    setEditTaskTags(task.tags || []);
   };
 
   const handleSaveEdit = async (taskId: string) => {
@@ -332,7 +326,8 @@ export default function TaskHubPage() {
       const updates: Partial<ChildTask> = {
         task_name: trimmed,
         date: editTaskDate,
-        note: editTaskNote
+        note: editTaskNote,
+        tags: editTaskTags
       };
       await updateChildTask(taskId, updates);
       setChildTasks(childTasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
@@ -358,12 +353,12 @@ export default function TaskHubPage() {
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
-        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
-          <AlertCircle className="w-12 h-12 text-blue-500" />
+        <div className="w-24 h-24 bg-[#eef3fc] rounded-full flex items-center justify-center mb-6 shadow-inner">
+          <AlertCircle className="w-12 h-12 text-[#597ecf]" />
         </div>
         <h2 className="text-3xl font-bold text-gray-900 mb-4">ยินดีต้อนรับสู่ระบบติดตามงาน</h2>
         <p className="text-gray-500 max-w-md mb-8 text-lg">กรุณาตั้งค่าชื่อนักเรียนก่อนเริ่มใช้งาน</p>
-        <Link href="/settings" className="bg-blue-600 text-white px-8 py-3 rounded-full font-medium hover:bg-blue-700 hover:shadow-lg transition-all transform hover:-translate-y-1">
+        <Link href="/settings" className="bg-[#597ecf] text-white px-8 py-3 rounded-full font-medium hover:bg-[#486cb8] hover:shadow-lg transition-all transform hover:-translate-y-1">
           ไปหน้าตั้งค่า
         </Link>
       </div>
@@ -374,10 +369,10 @@ export default function TaskHubPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
       {/* Header section adhering to AGENTS.md Standard Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
-            <LayoutGrid className="w-6 h-6 text-gray-400 mr-2 shrink-0" />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
+            <LayoutGrid className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
             จัดการงาน (Task Hub)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
@@ -389,7 +384,7 @@ export default function TaskHubPage() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
           >
             <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
             {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
@@ -399,7 +394,7 @@ export default function TaskHubPage() {
 
       {/* KPI Overview Summary (4 Cards) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
             <Clock className="w-5 h-5 text-amber-600" />
           </div>
@@ -409,17 +404,17 @@ export default function TaskHubPage() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl shrink-0">
-            <StickyNote className="w-5 h-5 text-purple-600" />
+        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center text-xl shrink-0">
+            <StickyNote className="w-5 h-5 text-[#57627a]" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">โน้ตส่วนตัวทั้งหมด</p>
-            <p className="text-xl font-black text-purple-600">{allPersonalTasks.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+            <p className="text-xl font-black text-[#57627a]">{allPersonalTasks.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
+        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
             <Link2 className="w-5 h-5 text-emerald-600" />
           </div>
@@ -429,31 +424,30 @@ export default function TaskHubPage() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
-            <Sparkles className="w-5 h-5 text-blue-600" />
+        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-xl shrink-0">
+            <Sparkles className="w-5 h-5 text-[#597ecf]" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">โน้ตอิสระ (ยังไม่ผูก)</p>
-            <p className="text-xl font-black text-blue-600">{allPersonalTasks.filter(t => !t.teacher_column_id).length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+            <p className="text-xl font-black text-[#597ecf]">{allPersonalTasks.filter(t => !t.teacher_column_id).length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
           </div>
         </div>
       </div>
 
       {/* Toolbar (Subject Filter and Search Bar) */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        
+      <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Subject Filter Dropdown */}
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-gray-400 shrink-0" />
           <select
             value={filterSubject}
             onChange={(e) => handleSubjectChange(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            className="bg-[#f4f7fa] border border-[#e2e8f0] text-gray-700 text-sm font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[#597ecf] cursor-pointer"
           >
-            <option value="All">🌟 ทุกวิชา ({uniqueSubjects.length} วิชา)</option>
+            <option key="all" value="All">🌟 ทุกวิชา ({uniqueSubjects.length} วิชา)</option>
             {uniqueSubjects.map(sub => (
-              <option key={sub} value={sub}>{sub}</option>
+              <option key={`sub-${sub}`} value={sub}>{sub}</option>
             ))}
           </select>
         </div>
@@ -466,7 +460,7 @@ export default function TaskHubPage() {
             placeholder="ค้นหาชื่องาน หรือข้อความโน้ต..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-gray-400"
+            className="w-full pl-9 pr-3 py-2 text-sm bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl outline-none focus:ring-2 focus:ring-[#597ecf] focus:bg-white transition-all placeholder:text-gray-400"
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -479,7 +473,7 @@ export default function TaskHubPage() {
       {/* Main Split View (2 Columns) */}
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#597ecf]"></div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -487,25 +481,25 @@ export default function TaskHubPage() {
           {/* ======================================================== */}
           {/* LEFT SIDE: งานจากชีตครูที่ยังไม่เสร็จ (ตัวตั้งในการผูกงาน) */}
           {/* ======================================================== */}
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200 shadow-sm flex flex-col h-full">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-sm flex flex-col h-full">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+                <div className="w-8 h-8 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center font-bold text-sm">
                   📋
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-gray-900">งานครูที่ยังไม่เสร็จ (ตัวตั้ง)</h2>
-                  <p className="text-xs text-gray-400">เฉพาะงานที่ครูยังไม่ติ๊กตรวจใน Google Sheet</p>
+                  <h2 className="text-lg font-bold text-gray-900">งานครูที่ยังไม่เสร็จ (ตัวตั้ง)</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">เฉพาะงานที่ครูยังไม่ติ๊กตรวจใน Google Sheet</p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+              <span className="text-xs font-bold text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2.5 py-1 rounded-full">
                 {pendingTeacherCols.length} รายการ
               </span>
             </div>
 
-            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1 scrollbar-hover">
+            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1">
               {pendingTeacherCols.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-gray-400 text-sm">
+                <div className="text-center py-12 bg-[#f4f7fa] rounded-2xl border border-dashed border-[#e2e8f0] text-gray-400 text-sm">
                   🎉 ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้
                 </div>
               ) : (
@@ -516,42 +510,51 @@ export default function TaskHubPage() {
                     <div 
                       key={col.id}
                       className={clsx(
-                        "p-4 rounded-2xl border transition-all duration-200 relative group",
-                        linkedPersonalTask ? "bg-emerald-50/40 border-emerald-300" : "bg-gray-50/80 border-gray-200 hover:border-blue-300 hover:bg-white"
+                        "p-4 rounded-2xl border transition-all duration-200",
+                        linkedPersonalTask ? "bg-emerald-50/40 border-emerald-200" : "bg-[#f8fafc] border-[#e2e8f0] hover:bg-white hover:shadow-xs"
                       )}
                     >
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-md">
-                            {col.subject}
-                          </span>
-                          {col.sequence && (
-                            <span className="text-[11px] font-mono font-black text-gray-600 bg-white border border-gray-200 px-1.5 py-0.2 rounded">
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/20">
+                          {col.subject}
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          {typeof col.sequence === 'number' && (
+                            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-[#eff2f7] text-[#57627a]">
                               #{col.sequence}
                             </span>
                           )}
-                        </div>
 
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-800 shadow-2xs">
-                          ⏳ รอครูตรวจ
-                        </span>
+                          {linkedPersonalTask ? (
+                            <span className="text-[10px] sm:text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> เชื่อมแล้ว
+                            </span>
+                          ) : (
+                            <span className="text-[10px] sm:text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                              รอเชื่อม
+                            </span>
+                          )}
+                        </div>
                       </div>
 
+                      {/* Content */}
                       <p className="font-bold text-gray-900 text-sm leading-snug mb-3">
                         {col.column_name}
                       </p>
 
-                      {/* Linking Footer & Action Button (Teacher is Anchor) */}
-                      <div className="pt-2.5 border-t border-gray-200/70 flex items-center justify-between gap-2">
+                      {/* Bottom Action Area */}
+                      <div className="pt-2 border-t border-[#e2e8f0] flex items-center justify-between gap-2">
                         {linkedPersonalTask ? (
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-1 text-emerald-800 font-semibold text-xs truncate mr-2">
-                              <Link2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                          <div className="flex items-center justify-between w-full bg-emerald-100/60 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-semibold">
+                            <div className="flex items-center gap-1.5 truncate mr-2">
+                              <span className="shrink-0">🔗</span>
                               <span className="truncate">ผูกกับโน้ต: <strong>{linkedPersonalTask.task_name}</strong></span>
                             </div>
                             <button
                               onClick={() => handleUnlink(linkedPersonalTask)}
-                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0 transition-colors cursor-pointer"
+                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0 transition-colors cursor-pointer"
                               title="ยกเลิกการเชื่อมโยง"
                             >
                               <Unlink className="w-3 h-3 inline mr-1" /> ยกเลิกผูก
@@ -560,7 +563,7 @@ export default function TaskHubPage() {
                         ) : (
                           <button
                             onClick={() => handleOpenLinkModal(col)}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                            className="w-full bg-[#597ecf] hover:bg-[#486cb8] text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
                           >
                             <Link2 className="w-3.5 h-3.5" /> 🔗 ผูกกับโน้ตส่วนตัว...
                           </button>
@@ -576,26 +579,26 @@ export default function TaskHubPage() {
           {/* ======================================================== */}
           {/* RIGHT SIDE: โน้ตส่วนตัวทั้งหมด (Personal Notes Archive) */}
           {/* ======================================================== */}
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200 shadow-sm flex flex-col h-full">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-sm flex flex-col h-full">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-sm">
+                <div className="w-8 h-8 rounded-xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center font-bold text-sm">
                   📝
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-gray-900">โน้ตส่วนตัว & ประวัติงาน (Personal Only)</h2>
-                  <p className="text-xs text-gray-400">เฉพาะโน้ตที่เพิ่มเอง (ดูประวัติและแก้ไข)</p>
+                  <h2 className="text-lg font-bold text-gray-900">โน้ตส่วนตัว & ประวัติงาน (Personal Only)</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">เฉพาะโน้ตที่เพิ่มเอง (ดูประวัติและแก้ไข)</p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full">
+              <span className="text-xs font-bold text-[#57627a] bg-[#eff2f7] border border-[#57627a]/30 px-2.5 py-1 rounded-full">
                 {filteredPersonalTasks.length} รายการ
               </span>
             </div>
 
-            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1 scrollbar-hover">
+            <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1">
               {filteredPersonalTasks.length === 0 ? (
-                <div className="text-center py-12 bg-purple-50/40 rounded-2xl border border-dashed border-purple-200 text-gray-400 text-sm">
-                  <StickyNote className="w-8 h-8 mx-auto mb-2 text-purple-300" />
+                <div className="text-center py-12 bg-[#eff2f7]/40 rounded-2xl border border-dashed border-[#cbd3e0] text-gray-400 text-sm">
+                  <StickyNote className="w-8 h-8 mx-auto mb-2 text-gray-400" />
                   ยังไม่มีโน้ตส่วนตัวในหมวดนี้
                   <p className="text-xs text-gray-400 mt-1">คุณสามารถเพิ่มโน้ตใหม่ได้ที่หน้า "การบ้านของฉัน"</p>
                 </div>
@@ -610,31 +613,42 @@ export default function TaskHubPage() {
                       key={task.id}
                       className={clsx(
                         "p-4 rounded-2xl border transition-all duration-200 relative group",
-                        isLinked ? "bg-emerald-50/30 border-emerald-200" : "bg-purple-50/30 border-purple-200/80 hover:bg-white"
+                        isLinked ? "bg-emerald-50/30 border-emerald-200" : "bg-[#eff2f7]/30 border-[#cbd3e0] hover:bg-white"
                       )}
                     >
                       {/* Top Badges */}
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-md text-purple-700 bg-purple-100/70">
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg text-[#57627a] bg-[#eff2f7] border border-[#cbd3e0]">
                             {task.subject}
                           </span>
                           
                           {isLinked ? (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300 flex items-center gap-1">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
                               <Link2 className="w-2.5 h-2.5" /> ผูกกับงานครูแล้ว
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded border border-[#cbd3e0]">
                               ⚪ โน้ตอิสระ
+                            </span>
+                          )}
+
+                          {task.tags?.includes('งานในคาบ') && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                              <GraduationCap className="w-3 h-3" /> งานในคาบ
+                            </span>
+                          )}
+                          {task.tags?.includes('การบ้าน') && (
+                            <span className="text-[10px] font-bold text-[#597ecf] bg-[#eef3fc] px-2 py-0.5 rounded border border-[#597ecf]/30 flex items-center gap-1">
+                              <Home className="w-3 h-3" /> การบ้าน
                             </span>
                           )}
                         </div>
 
                         {/* Status Badge */}
                         <span className={clsx(
-                          "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 shadow-2xs",
-                          task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-blue-100 text-blue-800" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : "bg-gray-100 text-gray-700"
+                          "text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs",
+                          task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : "bg-gray-100 text-gray-700"
                         )}>
                           {task.status === 'Verified' ? '🏆 ตรวจเสร็จแล้ว' : task.status === 'Done' ? '⏳ ทำเสร็จ-รอส่ง' : task.status === 'Submitted' ? '📤 ส่งแล้ว-รออัปเดต' : '📝 ยังไม่ทำ'}
                         </span>
@@ -646,29 +660,68 @@ export default function TaskHubPage() {
                           <textarea
                             value={editTaskName}
                             onChange={(e) => setEditTaskName(e.target.value)}
-                            className="w-full text-sm font-semibold text-gray-900 border border-purple-300 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none bg-white"
+                            className="w-full text-sm font-semibold text-gray-900 border border-[#57627a] rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#57627a] resize-none bg-white"
                             rows={2}
                           />
+
+                          {/* Checklist options in Edit Mode */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+                              ประเภทงาน
+                            </label>
+                            <div className="flex gap-1.5 flex-wrap items-center">
+                              {[
+                                { name: 'งานในคาบ', icon: GraduationCap, activeBg: 'bg-amber-500 hover:bg-amber-600' },
+                                { name: 'การบ้าน', icon: Home, activeBg: 'bg-[#597ecf] hover:bg-[#486cb8]' }
+                              ].map((item) => {
+                                const isChecked = editTaskTags.includes(item.name);
+                                const ItemIcon = item.icon;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={item.name}
+                                    onClick={() => {
+                                      if (isChecked) {
+                                        setEditTaskTags(editTaskTags.filter(t => t !== item.name));
+                                      } else {
+                                        setEditTaskTags([...editTaskTags, item.name]);
+                                      }
+                                    }}
+                                    className={clsx(
+                                      "px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 active:scale-95 border",
+                                      isChecked 
+                                        ? `${item.activeBg} text-white shadow-xs` 
+                                        : "bg-white border-[#e2e8f0] text-gray-600 hover:bg-gray-50"
+                                    )}
+                                  >
+                                    <ItemIcon className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{item.name}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="date"
                               value={editTaskDate}
                               onChange={(e) => setEditTaskDate(e.target.value)}
-                              className="text-xs text-gray-700 border border-purple-200 rounded-lg p-2 bg-white"
+                              className="text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
                             />
                             <input
                               type="text"
                               placeholder="โน้ตเพิ่มเติม..."
                               value={editTaskNote}
                               onChange={(e) => setEditTaskNote(e.target.value)}
-                              className="text-xs text-gray-700 border border-purple-200 rounded-lg p-2 bg-white"
+                              className="text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
                             />
                           </div>
                           <div className="flex justify-end gap-2 pt-1">
-                            <button onClick={() => setEditingTaskId(null)} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-semibold cursor-pointer">
+                            <button onClick={() => setEditingTaskId(null)} className="px-3 py-1 bg-white hover:bg-gray-50 text-gray-600 border border-[#e2e8f0] rounded-xl text-xs font-semibold cursor-pointer">
                               ยกเลิก
                             </button>
-                            <button onClick={() => handleSaveEdit(task.id!)} className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                            <button onClick={() => handleSaveEdit(task.id!)} className="px-3 py-1 bg-[#57627a] hover:bg-[#434c60] text-white rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer">
                               <Save className="w-3 h-3" /> บันทึก
                             </button>
                           </div>
@@ -682,14 +735,14 @@ export default function TaskHubPage() {
                           {(task.date || task.note) && (
                             <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
                               {task.date && <span>📅 {task.date}</span>}
-                              {task.note && <span className="text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">โน้ต: {task.note}</span>}
+                              {task.note && <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">โน้ต: {task.note}</span>}
                             </div>
                           )}
                         </div>
                       )}
 
                       {/* Linking Info / Actions */}
-                      <div className="mt-2.5 pt-2 border-t border-gray-200/60 flex items-center justify-between text-xs">
+                      <div className="mt-2.5 pt-2 border-t border-[#e2e8f0] flex items-center justify-between text-xs">
                         {isLinked && linkedCol ? (
                           <span className="text-emerald-800 font-medium truncate">
                             ผูกกับงานครู: <strong>{linkedCol.column_name}</strong> {linkedCol.sequence ? `(#${linkedCol.sequence})` : ''}
@@ -704,7 +757,7 @@ export default function TaskHubPage() {
                           <div className="flex items-center gap-1 shrink-0 ml-2">
                             <button
                               onClick={() => handleStartEdit(task)}
-                              className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                              className="p-1.5 text-gray-400 hover:text-[#597ecf] hover:bg-[#eef3fc] rounded-lg transition-colors cursor-pointer"
                               title="แก้ไขข้อความโน้ต"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -736,7 +789,7 @@ export default function TaskHubPage() {
           onClick={() => setSelectedTeacherColToLink(null)}
         >
           <div 
-            className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-gray-100 relative animate-in zoom-in-95 duration-200"
+            className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-[#e2e8f0] relative animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}
@@ -749,11 +802,11 @@ export default function TaskHubPage() {
 
             {/* Header */}
             <div className="flex items-center space-x-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center text-2xl shadow-inner">
+              <div className="w-12 h-12 rounded-2xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-2xl shadow-inner">
                 🔗
               </div>
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2 py-0.5 rounded-md">
                   เชื่อมโยงงานครูกับโน้ตส่วนตัว
                 </span>
                 <h3 className="text-lg font-extrabold text-gray-900 mt-1">เลือกโน้ตที่คุณเคยจดไว้</h3>
@@ -761,10 +814,10 @@ export default function TaskHubPage() {
             </div>
 
             {/* Target Teacher Column Summary (Anchor) */}
-            <div className="bg-blue-50/70 p-3.5 rounded-2xl border border-blue-200 mb-4 text-xs">
-              <p className="text-blue-600 font-bold mb-0.5">งานของครูในชีต (ตัวตั้ง):</p>
+            <div className="bg-[#eef3fc]/60 p-4 rounded-2xl border border-[#597ecf]/30 mb-4 text-xs">
+              <p className="text-[#597ecf] font-bold mb-0.5">งานของครูในชีต (ตัวตั้ง):</p>
               <p className="font-bold text-gray-900 text-sm">{selectedTeacherColToLink.column_name}</p>
-              <p className="text-gray-500 mt-1">วิชา: <strong className="text-blue-700">{selectedTeacherColToLink.subject}</strong> {selectedTeacherColToLink.sequence ? `(ลำดับ #${selectedTeacherColToLink.sequence})` : ''}</p>
+              <p className="text-gray-500 mt-1">วิชา: <strong className="text-[#597ecf]">{selectedTeacherColToLink.subject}</strong> {selectedTeacherColToLink.sequence ? `(ลำดับ #${selectedTeacherColToLink.sequence})` : ''}</p>
             </div>
 
             {/* Select Target Personal Note */}
@@ -779,7 +832,7 @@ export default function TaskHubPage() {
 
                 if (availableNotes.length === 0) {
                   return (
-                    <div className="text-xs text-gray-400 py-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    <div className="text-xs text-gray-400 py-6 text-center bg-[#f4f7fa] rounded-2xl border border-dashed border-[#e2e8f0]">
                       <p className="font-medium text-gray-500 mb-1">ยังไม่มีโน้ตส่วนตัวในวิชา {selectedTeacherColToLink.subject}</p>
                       <p className="text-[11px]">งานนี้จะเป็นงานเดี่ยวจากชีตครูตามปกติ</p>
                     </div>
@@ -787,7 +840,7 @@ export default function TaskHubPage() {
                 }
 
                 return (
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-hover">
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {availableNotes.map(note => {
                       const isSelected = targetPersonalTaskId === note.id;
                       const isSuggested = suggestedNote?.id === note.id;
@@ -800,12 +853,12 @@ export default function TaskHubPage() {
                           className={clsx(
                             "p-3 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer transition-all relative",
                             isSelected 
-                              ? "bg-purple-50 border-purple-500 ring-2 ring-purple-400/50 shadow-xs" 
+                              ? "bg-[#eef3fc] border-[#597ecf] ring-2 ring-[#597ecf]/40 shadow-xs" 
                               : isSuggested
-                                ? "bg-amber-50/50 border-amber-300 hover:bg-amber-50"
+                                ? "bg-amber-50/70 border-amber-300 hover:bg-amber-50"
                                 : isAlreadyLinked
                                   ? "bg-gray-50/60 border-gray-200 opacity-60"
-                                  : "bg-white border-gray-200 hover:border-purple-300 hover:bg-purple-50/20"
+                                  : "bg-white border-[#e2e8f0] hover:border-[#597ecf]/40 hover:bg-[#f4f7fa]"
                           )}
                         >
                           <div className="flex items-center gap-2 overflow-hidden mr-2">
@@ -814,7 +867,7 @@ export default function TaskHubPage() {
                               name="targetPersonalTask" 
                               checked={isSelected}
                               onChange={() => setTargetPersonalTaskId(note.id!)}
-                              className="cursor-pointer text-purple-600"
+                              className="cursor-pointer text-[#597ecf]"
                             />
                             <div className="truncate">
                               <div className="flex items-center gap-1.5">
@@ -831,7 +884,7 @@ export default function TaskHubPage() {
 
                           <span className={clsx(
                             "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
-                            note.status === 'Verified' ? "bg-emerald-100 text-emerald-800" : note.status === 'Done' ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"
+                            note.status === 'Verified' ? "bg-emerald-100 text-emerald-800" : note.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : "bg-gray-100 text-gray-700"
                           )}>
                             {note.status === 'Verified' ? '✓ ตรวจแล้ว' : note.status === 'Done' ? '⏳ ทำเสร็จ' : '📝 ยังไม่ทำ'}
                           </span>
@@ -848,13 +901,13 @@ export default function TaskHubPage() {
               <button
                 onClick={handleConfirmLink}
                 disabled={!targetPersonalTaskId}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
               >
                 <Link2 className="w-4 h-4" /> ยืนยันการเชื่อมโยง
               </button>
               <button
                 onClick={() => setSelectedTeacherColToLink(null)}
-                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-sm transition-colors cursor-pointer"
+                className="px-4 py-3 bg-white hover:bg-gray-50 text-gray-700 font-semibold border border-[#e2e8f0] rounded-xl text-sm transition-colors cursor-pointer"
               >
                 ยกเลิก
               </button>
