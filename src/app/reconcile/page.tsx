@@ -22,7 +22,11 @@ import {
   Clock,
   HelpCircle,
   GraduationCap,
-  Home
+  Home,
+  CheckSquare,
+  FileText,
+  Calendar,
+  Send
 } from 'lucide-react';
 import { 
   ChildTask, 
@@ -435,23 +439,8 @@ export default function TaskHubPage() {
         </div>
       </div>
 
-      {/* Toolbar (Subject Filter and Search Bar) */}
+      {/* Toolbar (Search Bar on the left, Subject Filter on the right) */}
       <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Subject Filter Dropdown */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400 shrink-0" />
-          <select
-            value={filterSubject}
-            onChange={(e) => handleSubjectChange(e.target.value)}
-            className="bg-[#f4f7fa] border border-[#e2e8f0] text-gray-700 text-sm font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[#597ecf] cursor-pointer"
-          >
-            <option key="all" value="All">🌟 ทุกวิชา ({uniqueSubjects.length} วิชา)</option>
-            {uniqueSubjects.map(sub => (
-              <option key={`sub-${sub}`} value={sub}>{sub}</option>
-            ))}
-          </select>
-        </div>
-
         {/* Search Bar */}
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -467,6 +456,21 @@ export default function TaskHubPage() {
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
+
+        {/* Subject Filter Dropdown */}
+        <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[38px] w-full md:w-auto self-stretch md:self-auto">
+          <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+          <select
+            value={filterSubject}
+            onChange={(e) => handleSubjectChange(e.target.value)}
+            className="text-xs sm:text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full cursor-pointer"
+          >
+            <option key="all" value="All">ทุกวิชา</option>
+            {uniqueSubjects.map(sub => (
+              <option key={`sub-${sub}`} value={sub}>{sub}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -485,7 +489,7 @@ export default function TaskHubPage() {
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center font-bold text-sm">
-                  📋
+                  <CheckSquare className="w-4 h-4 text-[#597ecf]" />
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">งานครูที่ยังไม่เสร็จ (ตัวตั้ง)</h2>
@@ -500,7 +504,7 @@ export default function TaskHubPage() {
             <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1">
               {pendingTeacherCols.length === 0 ? (
                 <div className="text-center py-12 bg-[#f4f7fa] rounded-2xl border border-dashed border-[#e2e8f0] text-gray-400 text-sm">
-                  🎉 ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้
+                  ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้
                 </div>
               ) : (
                 pendingTeacherCols.map(col => {
@@ -549,15 +553,15 @@ export default function TaskHubPage() {
                         {linkedPersonalTask ? (
                           <div className="flex items-center justify-between w-full bg-emerald-100/60 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-semibold">
                             <div className="flex items-center gap-1.5 truncate mr-2">
-                              <span className="shrink-0">🔗</span>
+                              <Link2 className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
                               <span className="truncate">ผูกกับโน้ต: <strong>{linkedPersonalTask.task_name}</strong></span>
                             </div>
                             <button
                               onClick={() => handleUnlink(linkedPersonalTask)}
-                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0 transition-colors cursor-pointer"
+                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0 transition-colors cursor-pointer flex items-center gap-1"
                               title="ยกเลิกการเชื่อมโยง"
                             >
-                              <Unlink className="w-3 h-3 inline mr-1" /> ยกเลิกผูก
+                              <Unlink className="w-3 h-3" /> ยกเลิกผูก
                             </button>
                           </div>
                         ) : (
@@ -565,7 +569,7 @@ export default function TaskHubPage() {
                             onClick={() => handleOpenLinkModal(col)}
                             className="w-full bg-[#597ecf] hover:bg-[#486cb8] text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
                           >
-                            <Link2 className="w-3.5 h-3.5" /> 🔗 ผูกกับโน้ตส่วนตัว...
+                            <Link2 className="w-3.5 h-3.5" /> ผูกกับโน้ตส่วนตัว...
                           </button>
                         )}
                       </div>
@@ -583,7 +587,7 @@ export default function TaskHubPage() {
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 rounded-xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center font-bold text-sm">
-                  📝
+                  <FileText className="w-4 h-4 text-[#57627a]" />
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">โน้ตส่วนตัว & ประวัติงาน (Personal Only)</h2>
@@ -628,8 +632,8 @@ export default function TaskHubPage() {
                               <Link2 className="w-2.5 h-2.5" /> ผูกกับงานครูแล้ว
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded border border-[#cbd3e0]">
-                              ⚪ โน้ตอิสระ
+                            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded border border-[#cbd3e0] flex items-center gap-1">
+                              <FileText className="w-2.5 h-2.5" /> โน้ตอิสระ
                             </span>
                           )}
 
@@ -647,10 +651,10 @@ export default function TaskHubPage() {
 
                         {/* Status Badge */}
                         <span className={clsx(
-                          "text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs",
+                          "text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs flex items-center gap-1",
                           task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : "bg-gray-100 text-gray-700"
                         )}>
-                          {task.status === 'Verified' ? '🏆 ตรวจเสร็จแล้ว' : task.status === 'Done' ? '⏳ ทำเสร็จ-รอส่ง' : task.status === 'Submitted' ? '📤 ส่งแล้ว-รออัปเดต' : '📝 ยังไม่ทำ'}
+                          {task.status === 'Verified' ? <><CheckCircle2 className="w-3 h-3" /> ตรวจเสร็จแล้ว</> : task.status === 'Done' ? <><CheckCircle className="w-3 h-3" /> ทำเสร็จ-รอส่ง</> : task.status === 'Submitted' ? <><Send className="w-3 h-3" /> ส่งแล้ว-รออัปเดต</> : <><FileText className="w-3 h-3" /> ยังไม่ทำ</>}
                         </span>
                       </div>
 
@@ -734,7 +738,7 @@ export default function TaskHubPage() {
 
                           {(task.date || task.note) && (
                             <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                              {task.date && <span>📅 {task.date}</span>}
+                              {task.date && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {task.date}</span>}
                               {task.note && <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">โน้ต: {task.note}</span>}
                             </div>
                           )}
@@ -803,7 +807,7 @@ export default function TaskHubPage() {
             {/* Header */}
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-2xl shadow-inner">
-                🔗
+                <Link2 className="w-6 h-6 text-[#597ecf]" />
               </div>
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2 py-0.5 rounded-md">
@@ -878,15 +882,15 @@ export default function TaskHubPage() {
                                   </span>
                                 )}
                               </div>
-                              {note.date && <p className="text-[10px] text-gray-400 mt-0.5">📅 {note.date}</p>}
+                              {note.date && <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1"><Calendar className="w-2.5 h-2.5" /> {note.date}</p>}
                             </div>
                           </div>
 
                           <span className={clsx(
-                            "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1",
                             note.status === 'Verified' ? "bg-emerald-100 text-emerald-800" : note.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : "bg-gray-100 text-gray-700"
                           )}>
-                            {note.status === 'Verified' ? '✓ ตรวจแล้ว' : note.status === 'Done' ? '⏳ ทำเสร็จ' : '📝 ยังไม่ทำ'}
+                            {note.status === 'Verified' ? <><CheckCircle2 className="w-2.5 h-2.5" /> ตรวจแล้ว</> : note.status === 'Done' ? <><CheckCircle className="w-2.5 h-2.5" /> ทำเสร็จ</> : <><FileText className="w-2.5 h-2.5" /> ยังไม่ทำ</>}
                           </span>
                         </div>
                       );

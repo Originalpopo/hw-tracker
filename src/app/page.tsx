@@ -56,8 +56,8 @@ export default function DashboardOverview() {
   const progressPercent = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
   const getProgressColorClass = (percent: number) => {
-    if (percent === 100) return 'text-green-500';
-    if (percent >= 75) return 'text-lime-500';
+    if (percent === 100) return 'text-emerald-600';
+    if (percent >= 75) return 'text-emerald-500';
     if (percent >= 50) return 'text-amber-500';
     if (percent >= 25) return 'text-orange-400';
     return 'text-orange-300';
@@ -76,14 +76,14 @@ export default function DashboardOverview() {
           angle: 60,
           spread: 55,
           origin: { x: 0 },
-          colors: ['#3b82f6', '#f97316', '#22c55e', '#a855f7', '#eab308']
+          colors: ['#597ecf', '#f97316', '#059669', '#57627a', '#eab308']
         });
         confetti({
           particleCount: 5,
           angle: 120,
           spread: 55,
           origin: { x: 1 },
-          colors: ['#3b82f6', '#f97316', '#22c55e', '#a855f7', '#eab308']
+          colors: ['#597ecf', '#f97316', '#059669', '#57627a', '#eab308']
         });
 
         if (Date.now() < end) {
@@ -262,7 +262,7 @@ export default function DashboardOverview() {
       {/* Subject Progress Cards */}
       <div className="mt-8">
         <h2 className="text-xl font-bold text-gray-800 flex items-center mb-6">
-          <BookOpen className="w-6 h-6 text-blue-500 mr-2" />
+          <BookOpen className="w-6 h-6 text-[#597ecf] mr-2" />
           ความคืบหน้ารายวิชา
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -276,7 +276,7 @@ export default function DashboardOverview() {
                 "rounded-2xl p-5 shadow-sm border flex flex-col justify-center transition-all duration-300 relative overflow-hidden",
                 pendingCount > 0 
                   ? "bg-white border-gray-100 hover:shadow-lg hover:-translate-y-1 hover:border-orange-200 cursor-pointer group" 
-                  : "bg-gradient-to-br from-green-400 to-green-600 border-green-500 text-white"
+                  : "bg-gradient-to-br from-emerald-500 to-emerald-700 border-emerald-600 text-white"
               )}>
                 {percent === 100 && (
                   <div className="absolute -right-4 -bottom-4 opacity-20 text-white pointer-events-none drop-shadow-sm">
@@ -291,12 +291,12 @@ export default function DashboardOverview() {
                     )}>
                       {subject}
                     </h3>
-                    <div className={clsx("text-[11px] mt-1.5 flex items-center", pendingCount > 0 ? "text-gray-500" : "text-green-100")}>
+                    <div className={clsx("text-[11px] mt-1.5 flex items-center", pendingCount > 0 ? "text-gray-500" : "text-emerald-100")}>
                       <span>รวม {stats.total}</span>
-                      <span className={clsx("mx-1.5", pendingCount > 0 ? "text-gray-200" : "text-green-300/50")}>|</span>
-                      <span className={pendingCount > 0 ? "text-green-600" : "text-white font-medium"}>ทำแล้ว {stats.done}</span>
-                      <span className={clsx("mx-1.5", pendingCount > 0 ? "text-gray-200" : "text-green-300/50")}>|</span>
-                      <span className={pendingCount > 0 ? "text-orange-500 font-medium group-hover:font-bold transition-all" : "text-green-200"}>
+                      <span className={clsx("mx-1.5", pendingCount > 0 ? "text-gray-200" : "text-emerald-300/50")}>|</span>
+                      <span className={pendingCount > 0 ? "text-emerald-600 font-medium" : "text-white font-medium"}>ทำแล้ว {stats.done}</span>
+                      <span className={clsx("mx-1.5", pendingCount > 0 ? "text-gray-200" : "text-emerald-300/50")}>|</span>
+                      <span className={pendingCount > 0 ? "text-orange-500 font-medium group-hover:font-bold transition-all" : "text-emerald-200"}>
                         ค้าง {pendingCount}
                       </span>
                     </div>
@@ -312,7 +312,7 @@ export default function DashboardOverview() {
                   <div 
                     className={clsx(
                       "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
-                      percent === 100 ? "bg-white/40" : "bg-gradient-to-r from-orange-300 via-amber-400 to-green-500"
+                      percent === 100 ? "bg-white/40" : "bg-gradient-to-r from-orange-300 via-amber-400 to-emerald-500"
                     )}
                     style={{ width: animateBars ? `${percent}%` : '0%' }}
                   >
@@ -348,7 +348,7 @@ export default function DashboardOverview() {
       <div className="bg-white rounded-3xl p-6 sm:p-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold text-gray-800 flex items-center">
-            <CalendarDays className="w-5 h-5 text-blue-500 mr-2" />
+            <CalendarDays className="w-5 h-5 text-[#597ecf] mr-2" />
             ภารกิจเร่งด่วน (งานค้างที่ต้องรีบเคลียร์)
           </h2>
         </div>
@@ -372,7 +372,7 @@ export default function DashboardOverview() {
                   <div className="truncate min-w-0">
                     <p className="font-bold text-gray-900 truncate text-xs sm:text-sm">{task.task_name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-semibold text-[#597ecf] bg-[#eef3fc] px-1.5 py-0.5 rounded">
                         {task.subject}
                       </span>
                       {task.date && (
@@ -395,7 +395,7 @@ export default function DashboardOverview() {
           <div className="mt-5 pt-4 border-t border-gray-100 text-center">
             <Link 
               href="/homework" 
-              className="inline-flex items-center text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-6 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
+              className="inline-flex items-center text-xs sm:text-sm font-bold text-[#597ecf] hover:text-[#486cb8] bg-[#eef3fc] hover:bg-[#e2ecfa] px-6 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
             >
               ดูทั้งหมด
               <ArrowRight className="w-4 h-4 ml-1.5" />

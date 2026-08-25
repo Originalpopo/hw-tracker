@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
-import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, RefreshCcw, StickyNote, RotateCcw, CheckCircle2, GraduationCap, Home } from 'lucide-react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, RefreshCcw, StickyNote, RotateCcw, CheckCircle2, GraduationCap, Home, CheckSquare, FileText, AlertTriangle } from 'lucide-react';
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -370,7 +370,8 @@ function HomeworkDashboard() {
                 : "bg-[#eef3fc] text-[#597ecf] hover:bg-[#e2ebf9] border border-[#597ecf]/30"
             )}
           >
-            <span>📋 งานตามชีตครู</span>
+            <CheckSquare className="w-4 h-4" />
+            <span>งานตามชีตครู</span>
             <span className={clsx("px-2 py-0.5 rounded-full text-xs font-extrabold", filterType === 'official' ? "bg-white/20 text-white" : "bg-[#597ecf]/20 text-[#597ecf]")}>
               {countOfficial}
             </span>
@@ -385,7 +386,8 @@ function HomeworkDashboard() {
                 : "bg-[#eff2f7] text-[#57627a] hover:bg-[#e2e6eb] border border-[#57627a]/30"
             )}
           >
-            <span>📝 โน้ตส่วนตัว</span>
+            <FileText className="w-4 h-4" />
+            <span>โน้ตส่วนตัว</span>
             <span className={clsx("px-2 py-0.5 rounded-full text-xs font-extrabold", filterType === 'personal' ? "bg-white/20 text-white" : "bg-[#57627a]/20 text-[#57627a]")}>
               {countPersonal}
             </span>
@@ -430,7 +432,7 @@ function HomeworkDashboard() {
           <div className="flex items-center justify-between pb-4 mb-5 border-b border-[#e2e8f0]">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-2xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center text-lg font-bold shadow-2xs">
-                📝
+                <FileText className="w-5 h-5 text-[#57627a]" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-gray-900">
@@ -735,7 +737,7 @@ function HomeworkDashboard() {
                     ) : (
                       <div className="flex items-center justify-between bg-amber-50 p-2.5 rounded-xl border border-amber-200">
                         <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                          <span className="shrink-0">⏳</span>
+                          <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                           <span>รอครูตรวจในชีต</span>
                         </span>
                         <button
@@ -824,7 +826,7 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
     <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden group">
       {task.status === 'Rework' && (
         <div className="absolute top-0 right-0 bg-rose-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-bl-xl z-10 shadow-xs flex items-center gap-1">
-          <span>🚨</span> ต้องแก้!
+          <AlertTriangle className="w-3 h-3" /> ต้องแก้!
         </div>
       )}
       
@@ -834,12 +836,12 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
             {task.subject}
           </span>
           {isPersonal ? (
-            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded-md border border-[#cbd3e0]">
-              📝 ส่วนตัว
+            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded-md border border-[#cbd3e0] flex items-center gap-1">
+              <FileText className="w-2.5 h-2.5" /> ส่วนตัว
             </span>
           ) : (
-            <span className="text-[10px] font-bold text-[#597ecf] bg-[#eef3fc] px-2 py-0.5 rounded-md border border-[#597ecf]/30">
-              📋 ชีตครู
+            <span className="text-[10px] font-bold text-[#597ecf] bg-[#eef3fc] px-2 py-0.5 rounded-md border border-[#597ecf]/30 flex items-center gap-1">
+              <CheckSquare className="w-2.5 h-2.5" /> ชีตครู
             </span>
           )}
           {task.tags?.includes('งานในคาบ') && (

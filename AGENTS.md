@@ -58,6 +58,15 @@ All pages in this project must adhere to the standard Page Header Card structure
   - **Surface/Card**: `#ffffff` (`--color-surface`)
   - **Border**: `#e2e8f0` (`--color-border`)
 
+### 5. Button Design Standard (Monotone Icon + Text)
+All interactive buttons across the application must follow the clean standard established in the **My Homework (`/homework`)** page:
+* **Single Monotone Icon**: Use a single Lucide icon placed before the text (e.g. `<Link2 className="w-4 h-4" />`, `<Send className="w-4 h-4" />`, `<CheckCircle className="w-4 h-4" />`).
+* **Monochrome Color Match**: The icon color must match the button text (pure white on solid buttons like Primary `#597ecf`, Accent `#57627a`, Success `emerald-600`, Danger `rose-600`; or matching theme color on light/outline buttons).
+* **Strictly No Duplicate Icons/Emojis**: NEVER mix raw emojis (e.g. 🔗, 📝, 📋) with Lucide icons inside a button or place multiple redundant icons together.
+* **Standard Button Sizing & Feedback**:
+  - `rounded-xl` with `shadow-xs active:scale-95 transition-all cursor-pointer`
+  - Font: `font-bold` or `font-semibold` text (e.g. `text-xs`, `text-sm`, or `text-base` depending on size).
+
 ## Verification & Subagent Policy
 - **No Automated Browser Subagent**: Do NOT use `browser_subagent` for UI verification in `hw-tracker` to keep development fast and responsive.
 - **Direct User Verification**: Validate code correctness via dev server compilation logs (Turbopack) and let the user preview changes directly at `http://localhost:3000`.

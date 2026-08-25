@@ -84,17 +84,17 @@ export default function PrintInProgressPage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-amber-50 p-4 rounded-xl border border-amber-100 gap-4">
-        <Link href="/print" className="flex items-center text-amber-700 hover:text-amber-900 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-amber-200">
-          <ArrowLeft className="w-5 h-5 mr-2" />
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-amber-50 p-4 rounded-2xl border border-amber-200 gap-4">
+        <Link href="/print" className="flex items-center text-amber-800 hover:text-amber-900 font-semibold bg-white px-4 py-2 rounded-xl shadow-xs border border-amber-200 active:scale-95 transition-all">
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
           กลับหน้าพิมพ์
         </Link>
         <div className="flex items-center gap-4">
           <div className="text-gray-600 text-sm hidden sm:block">
-            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
+            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 shadow-sm cursor-pointer">
-            <Printer className="w-5 h-5 mr-2" />
+          <button onClick={() => window.print()} className="flex items-center bg-amber-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-amber-700 shadow-xs cursor-pointer active:scale-95 transition-all">
+            <Printer className="w-4 h-4 mr-1.5" />
             พิมพ์อีกครั้ง
           </button>
         </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
-import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Zap, ListTodo, Columns3, Rows3 } from 'lucide-react';
+import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Zap, ListTodo, Columns3, Rows3, Clock, Flame, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
 
@@ -232,6 +232,17 @@ export default function AllTasksV2Page() {
     return result;
   }, [teacherCols, mappedTeacherColStatus]);
 
+  // Sorted stacks depending on hideCompleted toggle (Sort by highest pending when hiding completed)
+  const displayedStacks = useMemo(() => {
+    if (!hideCompleted) return subjectStacks;
+    return [...subjectStacks].sort((a, b) => {
+      if (b.pending !== a.pending) {
+        return b.pending - a.pending;
+      }
+      return a.subject.localeCompare(b.subject);
+    });
+  }, [subjectStacks, hideCompleted]);
+
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
@@ -254,24 +265,28 @@ export default function AllTasksV2Page() {
     const isMapped = mappedStatus !== undefined;
     const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
 
-    let cardBg = "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs";
+    let cardBg = "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
     const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
-    let icon = isOld ? "🔥" : "📝";
     let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
     let statusText = isOld ? "งานค้างเกิน 3 วัน (ยังไม่ส่ง)" : "งานใหม่ (ยังไม่ส่ง)";
+    let iconNode = isOld ? (
+      <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-700 shrink-0" />
+    ) : (
+      <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-700 shrink-0" />
+    );
 
     if (col.is_checked) {
-      cardBg = "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300/80";
-      icon = "🏆";
+      cardBg = "bg-emerald-50/40 hover:bg-emerald-200 text-emerald-950 border-emerald-400 shadow-2xs";
+      iconNode = <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />;
       statusKey = 'Checked';
       statusText = "ครูตรวจแล้วเรียบร้อย";
     } else if (isSubmittedOrDone) {
-      cardBg = "bg-[#eef3fc] hover:bg-[#e2ebf9] text-[#597ecf] border-[#597ecf]/40 shadow-xs";
-      icon = "⏳";
+      cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
+      iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
       statusKey = 'WaitingTeacher';
       statusText = "เด็กส่งแล้ว (รอครูอัปเดตคะแนน)";
     } else if (isOld) {
-      cardBg = "bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-300 shadow-xs";
+      cardBg = "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs";
     }
 
     return (
@@ -308,13 +323,13 @@ export default function AllTasksV2Page() {
       >
         {/* Sequence Number */}
         <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
-          #{seq}
+          {seq}
         </span>
 
-        {/* Status Icon */}
-        <span className="text-sm sm:text-base leading-none mt-0.5 drop-shadow-2xs">
-          {icon}
-        </span>
+        {/* Status Icon (Monotone Lucide Icon) */}
+        <div className="mt-1 flex items-center justify-center">
+          {iconNode}
+        </div>
       </div>
     );
   };
@@ -407,7 +422,7 @@ export default function AllTasksV2Page() {
         {/* Checked Card */}
         <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
-            🏆
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">ตรวจแล้ว</p>
@@ -418,7 +433,7 @@ export default function AllTasksV2Page() {
         {/* Waiting Teacher Card */}
         <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-xl shrink-0">
-            ⏳
+            <Clock className="w-5 h-5 text-[#597ecf]" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">รอครูอัปเดต</p>
@@ -429,7 +444,7 @@ export default function AllTasksV2Page() {
         {/* Overdue Card */}
         <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl shrink-0">
-            🔥
+            <Flame className="w-5 h-5 text-rose-600" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">งานค้าง (&gt;3 วัน)</p>
@@ -440,7 +455,7 @@ export default function AllTasksV2Page() {
         {/* New Tasks Card */}
         <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
-            📝
+            <FileText className="w-5 h-5 text-amber-600" />
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">งานใหม่</p>
@@ -464,10 +479,10 @@ export default function AllTasksV2Page() {
               <span>ความหมาย:</span>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span> 🏆 ตรวจแล้ว</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-[#597ecf] inline-block"></span> ⏳ รอครูอัปเดต</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-rose-500 inline-block"></span> 🔥 ค้าง &gt;3 วัน</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-400 inline-block"></span> 📝 งานใหม่</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> ตรวจแล้ว</span>
+              <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#597ecf]" /> รอครูอัปเดต</span>
+              <span className="flex items-center gap-1.5"><Flame className="w-3.5 h-3.5 text-rose-600" /> ค้าง &gt;3 วัน</span>
+              <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-amber-600" /> งานใหม่</span>
             </div>
           </div>
 
@@ -477,7 +492,7 @@ export default function AllTasksV2Page() {
           {layoutMode === 'vertical' && (
             <div className="overflow-x-auto pb-4 scrollbar-hover">
               <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
-                {subjectStacks.map((stack) => {
+                {displayedStacks.map((stack) => {
                   const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                   return (
@@ -536,8 +551,9 @@ export default function AllTasksV2Page() {
                         {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
 
                         {visibleTasks.length === 0 && (
-                          <div className="py-4 text-center text-[10px] text-gray-400 font-bold bg-white/50 rounded-xl border border-dashed border-[#e2e8f0]">
-                            ครบ ✨
+                          <div className="py-4 text-center bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex flex-col items-center justify-center gap-1">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span className="text-[10px] text-emerald-700 font-bold">ครบแล้ว</span>
                           </div>
                         )}
                       </div>
@@ -553,7 +569,7 @@ export default function AllTasksV2Page() {
           {/* ======================================================== */}
           {layoutMode === 'horizontal' && (
             <div className="flex flex-col gap-3 w-full">
-              {subjectStacks.map((stack) => {
+              {displayedStacks.map((stack) => {
                 const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                 return (
@@ -602,8 +618,9 @@ export default function AllTasksV2Page() {
                       {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
 
                       {visibleTasks.length === 0 && (
-                        <div className="py-2.5 px-4 text-xs text-gray-400 font-bold bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex items-center">
-                          ✨ ส่งครบเรียบร้อยแล้ว
+                        <div className="py-2.5 px-4 text-xs text-emerald-700 font-bold bg-white/60 rounded-xl border border-dashed border-emerald-200 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>ตรวจครบเรียบร้อยแล้ว</span>
                         </div>
                       )}
                     </div>
@@ -671,7 +688,7 @@ export default function AllTasksV2Page() {
                 selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-700",
                 selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-700"
               )}>
-                {selectedTaskModal.status === 'Checked' ? '🏆' : selectedTaskModal.status === 'WaitingTeacher' ? '⏳' : selectedTaskModal.status === 'Overdue' ? '🔥' : '📝'}
+                {selectedTaskModal.status === 'Checked' ? <CheckCircle2 className="w-6 h-6 text-emerald-600" /> : selectedTaskModal.status === 'WaitingTeacher' ? <Clock className="w-6 h-6 text-[#597ecf]" /> : selectedTaskModal.status === 'Overdue' ? <Flame className="w-6 h-6 text-rose-600" /> : <FileText className="w-6 h-6 text-amber-600" />}
               </div>
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2.5 py-0.5 rounded-md">

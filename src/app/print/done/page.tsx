@@ -84,17 +84,17 @@ export default function PrintDonePage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100 gap-4">
-        <Link href="/print" className="flex items-center text-blue-600 hover:text-blue-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-blue-200">
-          <ArrowLeft className="w-5 h-5 mr-2" />
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-[#eef3fc] p-4 rounded-2xl border border-[#597ecf]/30 gap-4">
+        <Link href="/print" className="flex items-center text-[#597ecf] hover:text-[#486cb8] font-semibold bg-white px-4 py-2 rounded-xl shadow-xs border border-[#597ecf]/30 active:scale-95 transition-all">
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
           กลับหน้าพิมพ์
         </Link>
         <div className="flex items-center gap-4">
           <div className="text-gray-600 text-sm hidden sm:block">
-            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
+            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm">
-            <Printer className="w-5 h-5 mr-2" />
+          <button onClick={() => window.print()} className="flex items-center bg-[#597ecf] text-white px-4 py-2 rounded-xl font-semibold hover:bg-[#486cb8] shadow-xs active:scale-95 transition-all cursor-pointer">
+            <Printer className="w-4 h-4 mr-1.5" />
             พิมพ์อีกครั้ง
           </button>
         </div>

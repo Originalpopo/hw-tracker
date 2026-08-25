@@ -84,17 +84,17 @@ export default function PrintSubmittedPage() {
       `}} />
       
       {/* Non-print controls */}
-      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-green-50 p-4 rounded-xl border border-green-100 gap-4">
-        <Link href="/print" className="flex items-center text-green-600 hover:text-green-800 font-medium bg-white px-4 py-2 rounded-lg shadow-sm border border-green-200">
-          <ArrowLeft className="w-5 h-5 mr-2" />
+      <div className="mb-8 print:hidden flex flex-col sm:flex-row justify-between items-center bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200 gap-4">
+        <Link href="/print" className="flex items-center text-emerald-700 hover:text-emerald-900 font-semibold bg-white px-4 py-2 rounded-xl shadow-xs border border-emerald-200 active:scale-95 transition-all">
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
           กลับหน้าพิมพ์
         </Link>
         <div className="flex items-center gap-4">
           <div className="text-gray-600 text-sm hidden sm:block">
-            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm font-mono text-xs">P</kbd>
+            💡 ระบบจะเปิดหน้าต่างพิมพ์ให้อัตโนมัติ หากไม่เปิด ให้กด <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-xs font-mono text-xs">P</kbd>
           </div>
-          <button onClick={() => window.print()} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 shadow-sm">
-            <Printer className="w-5 h-5 mr-2" />
+          <button onClick={() => window.print()} className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-700 shadow-xs active:scale-95 transition-all cursor-pointer">
+            <Printer className="w-4 h-4 mr-1.5" />
             พิมพ์อีกครั้ง
           </button>
         </div>
@@ -116,7 +116,7 @@ export default function PrintSubmittedPage() {
               <table key={subject} className="w-full border-collapse border border-black text-sm">
                 <thead>
                   <tr>
-                    <th className="bg-green-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
+                    <th className="bg-emerald-100 border border-black py-2 px-4 text-center font-bold text-lg" colSpan={2}>
                       {subject}
                     </th>
                   </tr>

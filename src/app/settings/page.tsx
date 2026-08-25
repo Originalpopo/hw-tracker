@@ -176,7 +176,7 @@ export default function SettingsPage() {
               value={sheetUrls}
               onChange={(e) => setSheetUrls(e.target.value)}
               placeholder="https://docs.google.com/spreadsheets/d/...&#10;https://docs.google.com/spreadsheets/d/..."
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#597ecf] focus:border-transparent outline-none resize-none"
               rows={4}
             />
             <p className="text-xs text-gray-500 mt-2">
@@ -192,7 +192,7 @@ export default function SettingsPage() {
             <div className="flex space-x-2">
               <div className="relative flex-1">
                 <select
-                  className="w-full pl-4 pr-10 py-3 text-base bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all appearance-none cursor-pointer"
+                  className="w-full pl-4 pr-10 py-3 text-base bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#597ecf] focus:border-transparent transition-all appearance-none cursor-pointer"
                   value={selectedStudent}
                   onChange={(e) => setSelectedStudent(e.target.value)}
                   disabled={loading || students.length === 0}
@@ -236,7 +236,7 @@ export default function SettingsPage() {
                     setAppPin(val);
                   }}
                   placeholder="0411"
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-center text-xl tracking-[0.5em] font-bold text-gray-800"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#597ecf] focus:border-transparent outline-none text-center text-xl tracking-[0.5em] font-bold text-gray-800"
                 />
               </div>
               
@@ -249,7 +249,7 @@ export default function SettingsPage() {
                   value={appPinHint}
                   onChange={(e) => setAppPinHint(e.target.value)}
                   placeholder="เช่น วันเดือนเกิดของลูก"
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-gray-800"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#597ecf] focus:border-transparent outline-none text-gray-800"
                 />
               </div>
             </div>
@@ -262,10 +262,10 @@ export default function SettingsPage() {
             <button
               onClick={handleSave}
               disabled={!selectedStudent || !sheetUrls || saveStatus === 'saving'}
-              className={`w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-xl text-base font-medium text-white shadow-sm transition-all duration-200 ${
+              className={`w-full flex items-center justify-center py-3 px-4 rounded-xl text-base font-semibold text-white shadow-xs transition-all duration-200 active:scale-95 cursor-pointer ${
                 !selectedStudent ? 'bg-gray-300 cursor-not-allowed' : 
-                saveStatus === 'saved' ? 'bg-green-500 hover:bg-green-600' :
-                'bg-indigo-600 hover:bg-indigo-700 hover:shadow-md'
+                saveStatus === 'saved' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                'bg-[#597ecf] hover:bg-[#486cb8]'
               }`}
             >
               {saveStatus === 'saved' ? (
@@ -304,8 +304,8 @@ export default function SettingsPage() {
             </div>
 
             {clearSuccess && (
-              <div className="mt-4 p-3 bg-green-50 text-green-700 rounded-xl text-sm flex items-center font-medium border border-green-200 animate-in fade-in">
-                <CheckCircle2 className="w-5 h-5 mr-2 text-green-600 shrink-0" />
+              <div className="mt-4 p-3 bg-emerald-50 text-emerald-800 rounded-xl text-sm flex items-center font-medium border border-emerald-200 animate-in fade-in">
+                <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-600 shrink-0" />
                 ล้างข้อมูลรายการงานการบ้านของ {selectedStudent} เรียบร้อยแล้ว!
               </div>
             )}
