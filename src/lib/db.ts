@@ -25,7 +25,7 @@ export interface ChildTask {
   status: TaskStatus;
   created_at: Timestamp | Date;
   updated_at: Timestamp | Date;
-  teacher_column_id: string | null;
+  teacher_column_id?: string | null;
   student_name: string; // The child's name for filtering
   date?: string; // Date of the task (e.g., YYYY-MM-DD)
   note?: string; // Additional details for the task

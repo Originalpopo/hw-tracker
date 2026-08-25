@@ -164,16 +164,32 @@ function HomeworkDashboard() {
     if (!finalSubject) return;
 
     try {
-      const newTask = await addChildTask({
+      const newTaskId = await addChildTask({
         student_name: studentName,
         subject: finalSubject,
         task_name: newTaskName.trim(),
+        teacher_column_id: null,
         task_type: 'personal',
         status: 'Todo',
         date: newDate,
         note: newNote.trim(),
         tags: newTags
       });
+
+      const newTask: ChildTask = {
+        id: newTaskId,
+        student_name: studentName,
+        subject: finalSubject,
+        task_name: newTaskName.trim(),
+        teacher_column_id: null,
+        task_type: 'personal',
+        status: 'Todo',
+        date: newDate,
+        note: newNote.trim(),
+        tags: newTags,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
 
       setTasks([newTask, ...tasks]);
       setNewTaskName('');
