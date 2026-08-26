@@ -43,6 +43,15 @@ import confetti from 'canvas-confetti';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 
+// Local date string in YYYY-MM-DD format (Thailand / Local Time)
+const getTodayDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function TaskHubPage() {
   const [studentName, setStudentName] = useState<string | null>(null);
   const [childTasks, setChildTasks] = useState<ChildTask[]>([]);
@@ -62,7 +71,8 @@ export default function TaskHubPage() {
   // Editing state for personal note
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTaskName, setEditTaskName] = useState('');
-  const [editTaskDate, setEditTaskDate] = useState('');
+  const [editTaskAssignedDate, setEditTaskAssignedDate] = useState('');
+  const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskNote, setEditTaskNote] = useState('');
   const [editTaskTags, setEditTaskTags] = useState<string[]>([]);
 
@@ -288,7 +298,7 @@ export default function TaskHubPage() {
   // Unlink Action
   const handleUnlink = async (personalTask: ChildTask) => {
     if (!personalTask.id || !personalTask.teacher_column_id || !studentName) return;
-    if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับโน้ต "${personalTask.task_name}" ใช่หรือไม่?`)) return;
+    if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับงานส่วนตัว "${personalTask.task_name}" ใช่หรือไม่?`)) return;
 
     try {
       const teacherColId = personalTask.teacher_column_id;
@@ -317,7 +327,8 @@ export default function TaskHubPage() {
   const handleStartEdit = (task: ChildTask) => {
     setEditingTaskId(task.id!);
     setEditTaskName(task.task_name);
-    setEditTaskDate(task.date || '');
+    setEditTaskAssignedDate(task.assigned_date || task.date || '');
+    setEditTaskDueDate(task.due_date || '');
     setEditTaskNote(task.note || '');
     setEditTaskTags(task.tags || []);
   };
@@ -329,7 +340,9 @@ export default function TaskHubPage() {
     try {
       const updates: Partial<ChildTask> = {
         task_name: trimmed,
-        date: editTaskDate,
+        assigned_date: editTaskAssignedDate,
+        due_date: editTaskDueDate,
+        date: editTaskAssignedDate,
         note: editTaskNote,
         tags: editTaskTags
       };
@@ -344,7 +357,7 @@ export default function TaskHubPage() {
 
   // Delete Personal Task
   const handleDeleteTask = async (taskId: string) => {
-    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบโน้ตงานนี้?")) return;
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบงานส่วนตัวนี้?")) return;
     try {
       await deleteChildTask(taskId);
       setChildTasks(childTasks.filter(t => t.id !== taskId));
@@ -380,7 +393,7 @@ export default function TaskHubPage() {
             จัดการงาน (Task Hub)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            ศูนย์ตรวจสอบงานครูที่ยังไม่เสร็จ และเชื่อมโยงกับโน้ตส่วนตัวของ {studentName}
+            ศูนย์ตรวจสอบงานครูที่ยังไม่เสร็จ และเชื่อมโยงกับงานส่วนตัวของ {studentName}
           </p>
         </div>
 
@@ -413,7 +426,7 @@ export default function TaskHubPage() {
             <StickyNote className="w-5 h-5 text-[#57627a]" />
           </div>
           <div>
-            <p className="text-xs text-gray-500 font-medium">โน้ตส่วนตัวทั้งหมด</p>
+            <p className="text-xs text-gray-500 font-medium">งานส่วนตัวทั้งหมด</p>
             <p className="text-xl font-black text-[#57627a]">{allPersonalTasks.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
           </div>
         </div>
@@ -433,7 +446,7 @@ export default function TaskHubPage() {
             <Sparkles className="w-5 h-5 text-[#597ecf]" />
           </div>
           <div>
-            <p className="text-xs text-gray-500 font-medium">โน้ตอิสระ (ยังไม่ผูก)</p>
+            <p className="text-xs text-gray-500 font-medium">งานส่วนตัว (ยังไม่ผูก)</p>
             <p className="text-xl font-black text-[#597ecf]">{allPersonalTasks.filter(t => !t.teacher_column_id).length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
           </div>
         </div>
@@ -554,7 +567,7 @@ export default function TaskHubPage() {
                           <div className="flex items-center justify-between w-full bg-emerald-100/60 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-semibold">
                             <div className="flex items-center gap-1.5 truncate mr-2">
                               <Link2 className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
-                              <span className="truncate">ผูกกับโน้ต: <strong>{linkedPersonalTask.task_name}</strong></span>
+                              <span className="truncate">ผูกกับงานส่วนตัว: <strong>{linkedPersonalTask.task_name}</strong></span>
                             </div>
                             <button
                               onClick={() => handleUnlink(linkedPersonalTask)}
@@ -569,7 +582,7 @@ export default function TaskHubPage() {
                             onClick={() => handleOpenLinkModal(col)}
                             className="w-full bg-[#597ecf] hover:bg-[#486cb8] text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
                           >
-                            <Link2 className="w-3.5 h-3.5" /> ผูกกับโน้ตส่วนตัว...
+                            <Link2 className="w-3.5 h-3.5" /> ผูกกับงานส่วนตัว...
                           </button>
                         )}
                       </div>
@@ -581,7 +594,7 @@ export default function TaskHubPage() {
           </div>
 
           {/* ======================================================== */}
-          {/* RIGHT SIDE: โน้ตส่วนตัวทั้งหมด (Personal Notes Archive) */}
+          {/* RIGHT SIDE: งานส่วนตัวทั้งหมด (Personal Tasks Archive)   */}
           {/* ======================================================== */}
           <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-sm flex flex-col h-full">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
@@ -590,8 +603,8 @@ export default function TaskHubPage() {
                   <FileText className="w-4 h-4 text-[#57627a]" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">โน้ตส่วนตัว & ประวัติงาน (Personal Only)</h2>
-                  <p className="text-xs sm:text-sm text-gray-500">เฉพาะโน้ตที่เพิ่มเอง (ดูประวัติและแก้ไข)</p>
+                  <h2 className="text-lg font-bold text-gray-900">งานส่วนตัว & ประวัติงาน (Personal Only)</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">เฉพาะงานที่เพิ่มเอง (ดูประวัติและแก้ไข)</p>
                 </div>
               </div>
               <span className="text-xs font-bold text-[#57627a] bg-[#eff2f7] border border-[#57627a]/30 px-2.5 py-1 rounded-full">
@@ -603,14 +616,17 @@ export default function TaskHubPage() {
               {filteredPersonalTasks.length === 0 ? (
                 <div className="text-center py-12 bg-[#eff2f7]/40 rounded-2xl border border-dashed border-[#cbd3e0] text-gray-400 text-sm">
                   <StickyNote className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  ยังไม่มีโน้ตส่วนตัวในหมวดนี้
-                  <p className="text-xs text-gray-400 mt-1">คุณสามารถเพิ่มโน้ตใหม่ได้ที่หน้า "การบ้านของฉัน"</p>
+                  ยังไม่มีงานส่วนตัวในหมวดนี้
+                  <p className="text-xs text-gray-400 mt-1">คุณสามารถเพิ่มงานส่วนตัวใหม่ได้ที่หน้า "การบ้านของฉัน"</p>
                 </div>
               ) : (
                 filteredPersonalTasks.map(task => {
                   const isLinked = !!task.teacher_column_id;
                   const isEditing = editingTaskId === task.id;
                   const linkedCol = isLinked ? teacherCols.find(c => c.id === task.teacher_column_id) : null;
+                  const todayStr = getTodayDateString();
+                  const isTaskDone = ['Verified', 'Done', 'Submitted'].includes(task.status);
+                  const isOverdue = !isTaskDone && !!task.due_date && task.due_date.trim() < todayStr;
 
                   return (
                     <div 
@@ -632,8 +648,8 @@ export default function TaskHubPage() {
                               <Link2 className="w-2.5 h-2.5" /> ผูกกับงานครูแล้ว
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded border border-[#cbd3e0] flex items-center gap-1">
-                              <FileText className="w-2.5 h-2.5" /> โน้ตอิสระ
+                            <span className="text-[10px] font-bold text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded-md border border-[#cbd3e0] flex items-center gap-1">
+                              <FileText className="w-2.5 h-2.5" /> ส่วนตัว
                             </span>
                           )}
 
@@ -707,18 +723,36 @@ export default function TaskHubPage() {
                           </div>
 
                           <div className="grid grid-cols-2 gap-2">
-                            <input
-                              type="date"
-                              value={editTaskDate}
-                              onChange={(e) => setEditTaskDate(e.target.value)}
-                              className="text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
-                            />
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-500 mb-1 flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-gray-400" /> วันที่มอบหมาย
+                              </label>
+                              <input
+                                type="date"
+                                value={editTaskAssignedDate}
+                                onChange={(e) => setEditTaskAssignedDate(e.target.value)}
+                                className="w-full text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-500 mb-1 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-gray-400" /> กำหนดส่งงาน
+                              </label>
+                              <input
+                                type="date"
+                                value={editTaskDueDate}
+                                onChange={(e) => setEditTaskDueDate(e.target.value)}
+                                className="w-full text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div>
                             <input
                               type="text"
                               placeholder="โน้ตเพิ่มเติม..."
                               value={editTaskNote}
                               onChange={(e) => setEditTaskNote(e.target.value)}
-                              className="text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
+                              className="w-full text-xs text-gray-700 border border-[#e2e8f0] rounded-xl p-2 bg-white"
                             />
                           </div>
                           <div className="flex justify-end gap-2 pt-1">
@@ -731,34 +765,54 @@ export default function TaskHubPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="my-1.5">
-                          <p className="font-bold text-gray-900 text-sm leading-snug">
-                            {task.task_name}
-                          </p>
+                        <div className="my-1.5 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-gray-900 text-sm leading-snug">
+                              {task.task_name}
+                            </p>
 
-                          {(task.date || task.note) && (
-                            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                              {task.date && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {task.date}</span>}
-                              {task.note && <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">โน้ต: {task.note}</span>}
+                            {task.note && (
+                              <span className="text-[11px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 inline-flex items-center gap-1 shrink-0">
+                                <StickyNote className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>โน้ต: {task.note}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {isLinked && linkedCol && (
+                            <div className="text-[11px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1.5 max-w-full">
+                              <Link2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span className="truncate">ผูกกับงานครู: <strong>{linkedCol.column_name}</strong> {linkedCol.sequence ? `(#${linkedCol.sequence})` : ''}</span>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* Linking Info / Actions */}
-                      <div className="mt-2.5 pt-2 border-t border-[#e2e8f0] flex items-center justify-between text-xs">
-                        {isLinked && linkedCol ? (
-                          <span className="text-emerald-800 font-medium truncate">
-                            ผูกกับงานครู: <strong>{linkedCol.column_name}</strong> {linkedCol.sequence ? `(#${linkedCol.sequence})` : ''}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 font-medium">
-                            โน้ตส่วนตัวอิสระ
-                          </span>
-                        )}
+                      {/* Bottom Date Area & Action Buttons */}
+                      <div className="mt-2.5 pt-2 border-t border-[#e2e8f0] flex items-center justify-between text-xs gap-2 flex-wrap sm:flex-nowrap">
+                        <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                          {(task.assigned_date || task.date) && (
+                            <span className="text-gray-500">
+                              มอบหมาย: <strong className="text-gray-700 font-medium">{task.assigned_date || task.date}</strong>
+                            </span>
+                          )}
+                          {task.due_date && (
+                            <span className={clsx(
+                              "font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded-md",
+                              isOverdue
+                                ? "bg-rose-50 text-rose-600 border border-rose-200"
+                                : "text-[#597ecf] bg-[#eef3fc]"
+                            )}>
+                              ส่ง: {task.due_date}
+                            </span>
+                          )}
+                          {!task.assigned_date && !task.due_date && task.date && (
+                            <span className="text-gray-400">{task.date}</span>
+                          )}
+                        </div>
 
                         {!isEditing && (
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <div className="flex items-center gap-1 shrink-0 ml-auto">
                             <button
                               onClick={() => handleStartEdit(task)}
                               className="p-1.5 text-gray-400 hover:text-[#597ecf] hover:bg-[#eef3fc] rounded-lg transition-colors cursor-pointer"
@@ -811,9 +865,9 @@ export default function TaskHubPage() {
               </div>
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2 py-0.5 rounded-md">
-                  เชื่อมโยงงานครูกับโน้ตส่วนตัว
+                  เชื่อมโยงงานครูกับงานส่วนตัว
                 </span>
-                <h3 className="text-lg font-extrabold text-gray-900 mt-1">เลือกโน้ตที่คุณเคยจดไว้</h3>
+                <h3 className="text-lg font-extrabold text-gray-900 mt-1">เลือกงานส่วนตัวที่คุณเคยบันทึกไว้</h3>
               </div>
             </div>
 
@@ -827,7 +881,7 @@ export default function TaskHubPage() {
             {/* Select Target Personal Note */}
             <div className="space-y-2 mb-6">
               <label className="block text-xs font-bold text-gray-700">
-                เลือกโน้ตส่วนตัวในวิชา {selectedTeacherColToLink.subject} เพื่อผูกเข้าด้วยกัน:
+                เลือกงานส่วนตัวในวิชา {selectedTeacherColToLink.subject} เพื่อผูกเข้าด้วยกัน:
               </label>
               
               {(() => {
@@ -837,7 +891,7 @@ export default function TaskHubPage() {
                 if (availableNotes.length === 0) {
                   return (
                     <div className="text-xs text-gray-400 py-6 text-center bg-[#f4f7fa] rounded-2xl border border-dashed border-[#e2e8f0]">
-                      <p className="font-medium text-gray-500 mb-1">ยังไม่มีโน้ตส่วนตัวในวิชา {selectedTeacherColToLink.subject}</p>
+                      <p className="font-medium text-gray-500 mb-1">ยังไม่มีงานส่วนตัวในวิชา {selectedTeacherColToLink.subject}</p>
                       <p className="text-[11px]">งานนี้จะเป็นงานเดี่ยวจากชีตครูตามปกติ</p>
                     </div>
                   );

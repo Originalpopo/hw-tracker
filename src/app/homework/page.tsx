@@ -26,13 +26,15 @@ function HomeworkDashboard() {
   const [newTaskName, setNewTaskName] = useState('');
   const [newSubject, setNewSubject] = useState(DEFAULT_SUBJECTS[0]);
   const [customSubject, setCustomSubject] = useState('');
-  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newAssignedDate, setNewAssignedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newDueDate, setNewDueDate] = useState('');
   const [newNote, setNewNote] = useState('');
   const [newTags, setNewTags] = useState<string[]>(['การบ้าน']);
 
   // Filter states
+  const defaultType = (searchParams.get('type') as 'official' | 'personal') || 'official';
   const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
-  const [filterType, setFilterType] = useState<'official' | 'personal'>('official');
+  const [filterType, setFilterType] = useState<'official' | 'personal'>(defaultType);
 
   const availableSubjects = useMemo(() => {
     const subjects = new Set<string>();
@@ -60,6 +62,18 @@ function HomeworkDashboard() {
       setNewSubject(availableSubjects[0]);
     }
   }, [availableSubjects, filterSubject]);
+
+  useEffect(() => {
+    const urlSubject = searchParams.get('subject');
+    if (urlSubject) {
+      setFilterSubject(urlSubject);
+      localStorage.setItem('hw_filter_subject', urlSubject);
+    }
+    const urlType = searchParams.get('type') as 'official' | 'personal' | null;
+    if (urlType === 'official' || urlType === 'personal') {
+      setFilterType(urlType);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const init = async () => {
@@ -100,6 +114,11 @@ function HomeworkDashboard() {
         localStorage.setItem('hw_filter_subject', urlSubject);
       } else if (savedFilter) {
         setFilterSubject(savedFilter);
+      }
+
+      const urlType = searchParams.get('type') as 'official' | 'personal' | null;
+      if (urlType === 'official' || urlType === 'personal') {
+        setFilterType(urlType);
       }
     };
     init();
@@ -171,7 +190,9 @@ function HomeworkDashboard() {
         teacher_column_id: null,
         task_type: 'personal',
         status: 'Todo',
-        date: newDate,
+        date: newAssignedDate,
+        assigned_date: newAssignedDate,
+        due_date: newDueDate,
         note: newNote.trim(),
         tags: newTags
       });
@@ -184,7 +205,9 @@ function HomeworkDashboard() {
         teacher_column_id: null,
         task_type: 'personal',
         status: 'Todo',
-        date: newDate,
+        date: newAssignedDate,
+        assigned_date: newAssignedDate,
+        due_date: newDueDate,
         note: newNote.trim(),
         tags: newTags,
         created_at: new Date(),
@@ -193,6 +216,7 @@ function HomeworkDashboard() {
 
       setTasks([newTask, ...tasks]);
       setNewTaskName('');
+      setNewDueDate('');
       setNewNote('');
       setIsAdding(false);
     } catch (error) {
@@ -329,7 +353,7 @@ function HomeworkDashboard() {
             <BookOpen className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
             การบ้านของฉัน (Home Work)
           </h1>
-          <p className="text-gray-500 mt-1 text-sm sm:text-base">ติดตามงานจากครูและโน้ตส่วนตัวของ {studentName}</p>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">ติดตามงานจากครูและงานส่วนตัวของ {studentName}</p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
@@ -342,7 +366,7 @@ function HomeworkDashboard() {
                 : "bg-white border border-[#e2e8f0] text-gray-700 hover:bg-[#f4f7fa] shadow-xs"
             )}
           >
-            {isAdding ? 'ยกเลิก' : <><Plus className="w-4 h-4 mr-1.5 text-[#597ecf]" /> เพิ่มโน้ตงานเอง</>}
+            {isAdding ? 'ยกเลิก' : <><Plus className="w-4 h-4 mr-1.5 text-[#597ecf]" /> เพิ่มงานส่วนตัว</>}
           </button>
 
           <button
@@ -387,7 +411,7 @@ function HomeworkDashboard() {
             )}
           >
             <FileText className="w-4 h-4" />
-            <span>โน้ตส่วนตัว</span>
+            <span>งานส่วนตัว</span>
             <span className={clsx("px-2 py-0.5 rounded-full text-xs font-extrabold", filterType === 'personal' ? "bg-white/20 text-white" : "bg-[#57627a]/20 text-[#57627a]")}>
               {countPersonal}
             </span>
@@ -436,10 +460,10 @@ function HomeworkDashboard() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-gray-900">
-                  เพิ่มโน้ตการบ้านส่วนตัว (Personal Task)
+                  เพิ่มงานส่วนตัว (Personal Task)
                 </h3>
                 <p className="text-xs sm:text-sm text-gray-500">
-                  บันทึกงานที่ต้องการทำด้วยตนเอง หรือจดโน้ตเพิ่มเติม (ไม่อิง Google Sheet ของครู)
+                  บันทึกงานที่ต้องการทำด้วยตนเอง หรือบันทึกเพิ่มเติม (ไม่อิง Google Sheet ของครู)
                 </p>
               </div>
             </div>
@@ -455,45 +479,58 @@ function HomeworkDashboard() {
           </div>
 
           <div className="space-y-4">
-            {/* แถวที่ 1: วันที่ ขึ้นก่อน ตามด้วย วิชา อยู่แถวเดียวกัน */}
+            {/* แถวที่ 1: วิชา อยู่แถวบนสุด */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                วิชา <span className="text-rose-500">*</span>
+              </label>
+              <div className="space-y-2">
+                <select 
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl text-sm font-semibold text-gray-800 focus:bg-white focus:ring-2 focus:ring-[#597ecf] focus:border-[#597ecf] outline-none transition-all cursor-pointer"
+                >
+                  {availableSubjects.map((s, idx) => (
+                    <option key={`add-subj-${s}-${idx}`} value={s}>{s}</option>
+                  ))}
+                </select>
+                {newSubject === 'อื่นๆ' && (
+                  <input 
+                    type="text" 
+                    required
+                    value={customSubject}
+                    onChange={(e) => setCustomSubject(e.target.value)}
+                    placeholder="พิมพ์ระบุชื่อวิชา..."
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#597ecf] rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-[#597ecf] outline-none placeholder:text-gray-400"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* แถวที่ 2: วันที่มอบหมาย และ กำหนดส่งงาน อยู่แถวเดียวกัน */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  วันที่มอบหมาย / กำหนดส่ง
+                  วันที่มอบหมาย
                 </label>
                 <input 
                   type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
+                  value={newAssignedDate}
+                  onChange={(e) => setNewAssignedDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl text-sm font-medium text-gray-700 focus:bg-white focus:ring-2 focus:ring-[#597ecf] focus:border-[#597ecf] outline-none transition-all cursor-pointer"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  วิชา <span className="text-rose-500">*</span>
+                  กำหนดส่งงาน
                 </label>
-                <div className="space-y-2">
-                  <select 
-                    value={newSubject}
-                    onChange={(e) => setNewSubject(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl text-sm font-semibold text-gray-800 focus:bg-white focus:ring-2 focus:ring-[#597ecf] focus:border-[#597ecf] outline-none transition-all cursor-pointer"
-                  >
-                    {availableSubjects.map((s, idx) => (
-                      <option key={`add-subj-${s}-${idx}`} value={s}>{s}</option>
-                    ))}
-                  </select>
-                  {newSubject === 'อื่นๆ' && (
-                    <input 
-                      type="text" 
-                      required
-                      value={customSubject}
-                      onChange={(e) => setCustomSubject(e.target.value)}
-                      placeholder="พิมพ์ระบุชื่อวิชา..."
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#597ecf] rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-[#597ecf] outline-none placeholder:text-gray-400"
-                    />
-                  )}
-                </div>
+                <input 
+                  type="date"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl text-sm font-medium text-gray-700 focus:bg-white focus:ring-2 focus:ring-[#597ecf] focus:border-[#597ecf] outline-none transition-all cursor-pointer"
+                />
               </div>
             </div>
 
@@ -584,7 +621,7 @@ function HomeworkDashboard() {
               type="submit" 
               className="bg-[#597ecf] hover:bg-[#486cb8] text-white px-6 py-2.5 rounded-xl font-bold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> บันทึกโน้ตงาน
+              <Plus className="w-4 h-4" /> บันทึกงานส่วนตัว
             </button>
           </div>
         </form>
@@ -600,12 +637,12 @@ function HomeworkDashboard() {
             <CheckCircle className="w-8 h-8 text-[#597ecf]" />
           </div>
           <h3 className="text-xl font-bold text-gray-900 mb-2">
-            {filterType === 'official' ? 'เย้! ไม่มีงานตามชีตครูค้างอยู่' : 'ยังไม่มีโน้ตการบ้านส่วนตัว'}
+            {filterType === 'official' ? 'เย้! ไม่มีงานตามชีตครูค้างอยู่' : 'ยังไม่มีงานส่วนตัว'}
           </h3>
           <p className="text-gray-500 mb-5 text-sm max-w-md mx-auto">
             {filterType === 'official' 
               ? 'คุณทำเสร็จหมดแล้ว หรือสามารถกด "อัปเดตข้อมูลจากครู" เพื่อดึงงานชุดใหม่ได้' 
-              : 'คุณสามารถกดปุ่ม "เพิ่มโน้ตการบ้านส่วนตัว" ด้านล่างหรือด้านบน เพื่อบันทึกงานที่ต้องการทำด้วยตนเองได้เลย'}
+              : 'คุณสามารถกดปุ่ม "เพิ่มงานส่วนตัว" ด้านล่างหรือด้านบน เพื่อบันทึกงานที่ต้องการทำด้วยตนเองได้เลย'}
           </p>
           {filterType === 'official' ? (
             <button
@@ -622,7 +659,7 @@ function HomeworkDashboard() {
               className="inline-flex items-center bg-[#57627a] hover:bg-[#434c60] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4 mr-2" />
-              เพิ่มโน้ตการบ้านส่วนตัว
+              เพิ่มงานส่วนตัว
             </button>
           )}
         </div>
@@ -798,7 +835,8 @@ function TaskColumn({ title, icon, tasks, children, bgColor, borderColor, header
 function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(task.task_name);
-  const [editDate, setEditDate] = useState(task.date || '');
+  const [editAssignedDate, setEditAssignedDate] = useState(task.assigned_date || task.date || '');
+  const [editDueDate, setEditDueDate] = useState(task.due_date || '');
   const [editNote, setEditNote] = useState(task.note || '');
   const [editTags, setEditTags] = useState<string[]>(task.tags || []);
 
@@ -808,19 +846,24 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
     const trimmedName = editName.trim();
     if (trimmedName && (
       trimmedName !== task.task_name || 
-      editDate !== task.date || 
+      editAssignedDate !== (task.assigned_date || task.date || '') ||
+      editDueDate !== (task.due_date || '') || 
       editNote !== task.note ||
       JSON.stringify(editTags) !== JSON.stringify(task.tags || [])
     )) {
       onUpdateTask(task.id, { 
         task_name: trimmedName, 
-        date: editDate, 
+        assigned_date: editAssignedDate,
+        due_date: editDueDate,
+        date: editAssignedDate, 
         note: editNote,
         tags: editTags
       });
     }
     setIsEditing(false);
   };
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   return (
     <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden group">
@@ -873,7 +916,8 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
                   onClick={() => {
                     setIsEditing(true);
                     setEditName(task.task_name);
-                    setEditDate(task.date || '');
+                    setEditAssignedDate(task.assigned_date || task.date || '');
+                    setEditDueDate(task.due_date || '');
                     setEditNote(task.note || '');
                     setEditTags(task.tags || []);
                   }}
@@ -896,7 +940,7 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
       </div>
 
       {isEditing ? (
-        <div className="mb-2 space-y-2 bg-[#f4f7fa] p-3.5 rounded-2xl border border-[#e2e8f0]">
+        <div className="mb-2 space-y-2.5 bg-[#f4f7fa] p-3.5 rounded-2xl border border-[#e2e8f0]">
           <textarea
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
@@ -904,12 +948,26 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
             rows={2}
             autoFocus
           />
-          <input 
-            type="date"
-            value={editDate}
-            onChange={(e) => setEditDate(e.target.value)}
-            className="w-full text-xs text-gray-700 bg-white border border-[#e2e8f0] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-0.5">วันที่มอบหมาย</label>
+              <input 
+                type="date"
+                value={editAssignedDate}
+                onChange={(e) => setEditAssignedDate(e.target.value)}
+                className="w-full text-xs text-gray-700 bg-white border border-[#e2e8f0] rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-0.5">กำหนดส่งงาน</label>
+              <input 
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
+                className="w-full text-xs text-gray-700 bg-white border border-[#e2e8f0] rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
+              />
+            </div>
+          </div>
           <input 
             type="text" 
             value={editNote}
@@ -958,7 +1016,14 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
 
           <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-[#e2e8f0]">
             <button 
-              onClick={() => { setIsEditing(false); setEditName(task.task_name); setEditDate(task.date || ''); setEditNote(task.note || ''); setEditTags(task.tags || []); }} 
+              onClick={() => { 
+                setIsEditing(false); 
+                setEditName(task.task_name); 
+                setEditAssignedDate(task.assigned_date || task.date || ''); 
+                setEditDueDate(task.due_date || ''); 
+                setEditNote(task.note || ''); 
+                setEditTags(task.tags || []); 
+              }} 
               className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-[#e2e8f0] rounded-lg hover:bg-gray-50 cursor-pointer"
             >
               ยกเลิก
@@ -974,15 +1039,31 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
       ) : (
         <div className="mb-2">
           <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
-          {(task.date || task.note) && (
-            <div className="flex items-center mt-1.5 space-x-2">
-              {task.date && (
-                <p className="text-xs text-gray-400 font-medium">{task.date}</p>
-              )}
+          {(task.assigned_date || task.due_date || task.date || task.note) && (
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-1.5 text-xs text-gray-500">
+              <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                {(task.assigned_date || task.date) && (
+                  <span className="text-gray-500">มอบหมาย: <strong className="text-gray-700 font-medium">{task.assigned_date || task.date}</strong></span>
+                )}
+                {task.due_date && (
+                  <span className={clsx(
+                    "font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded-md",
+                    !['Verified', 'Done', 'Submitted'].includes(task.status) && task.due_date < todayStr
+                      ? "bg-rose-50 text-rose-600 border border-rose-200"
+                      : "text-[#597ecf] bg-[#eef3fc]"
+                  )}>
+                    ส่ง: {task.due_date}
+                  </span>
+                )}
+                {!task.assigned_date && !task.due_date && task.date && (
+                  <span className="text-gray-400">{task.date}</span>
+                )}
+              </div>
+
               {task.note && (
-                <div className="relative group/note cursor-help flex items-center">
+                <div className="relative group/note cursor-help flex items-center ml-auto">
                   <StickyNote className="w-3.5 h-3.5 text-amber-500" />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-xs bg-gray-900 text-white text-xs px-2.5 py-1 rounded-lg opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
+                  <div className="absolute bottom-full right-0 mb-1 w-max max-w-xs bg-gray-900 text-white text-xs px-2.5 py-1 rounded-lg opacity-0 group-hover/note:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg break-words">
                     {task.note}
                   </div>
                 </div>

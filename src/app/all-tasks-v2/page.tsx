@@ -2,9 +2,52 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
-import { CheckSquare, AlertCircle, RefreshCcw, Sparkles, CheckCircle2, BookOpen, X, Eye, EyeOff, Zap, ListTodo, Columns3, Rows3, Clock, Flame, FileText } from 'lucide-react';
+import { 
+  CheckSquare, 
+  AlertCircle, 
+  RefreshCcw, 
+  CheckCircle2, 
+  BookOpen, 
+  X, 
+  Eye, 
+  EyeOff, 
+  ListTodo, 
+  Columns3, 
+  Rows3, 
+  Clock, 
+  Flame, 
+  FileText,
+  Calendar,
+  Tag
+} from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
+
+// Safe timestamp extractor helper
+const getTimestamp = (val: any): number => {
+  if (!val) return 0;
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (val.seconds) return val.seconds * 1000;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') return val;
+  const parsed = new Date(val).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+// Local date string in YYYY-MM-DD format (Thailand / Local Time)
+const getTodayDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Check if a personal task has passed its due date (only tasks with explicit due_date)
+const isPersonalTaskOverdue = (task: ChildTask, todayStr: string): boolean => {
+  if (!task.due_date || !task.due_date.trim()) return false;
+  return task.due_date.trim() < todayStr;
+};
 
 export default function AllTasksV2Page() {
   const [studentName, setStudentName] = useState<string | null>(null);
@@ -14,6 +57,9 @@ export default function AllTasksV2Page() {
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
   
+  // 2-Mode Segmented Control: 'official' (งานตามชีตครู) vs 'personal' (งานส่วนตัว)
+  const [filterType, setFilterType] = useState<'official' | 'personal'>('official');
+
   // Filter & Layout View Options
   const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -33,7 +79,13 @@ export default function AllTasksV2Page() {
   const [selectedTaskModal, setSelectedTaskModal] = useState<{
     subject: string;
     seq: number;
-    col: TeacherColumn;
+    taskType: 'official' | 'personal';
+    taskName: string;
+    assignedDate?: string;
+    dueDate?: string;
+    date?: string;
+    note?: string;
+    tags?: string[];
     status: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New';
     statusText: string;
   } | null>(null);
@@ -45,6 +97,11 @@ export default function AllTasksV2Page() {
       const savedLayout = localStorage.getItem('hw_all_tasks_layout_mode') as 'vertical' | 'horizontal' | null;
       if (savedLayout === 'vertical' || savedLayout === 'horizontal') {
         setLayoutMode(savedLayout);
+      }
+
+      const savedFilterType = localStorage.getItem('hw_all_tasks_filter_type') as 'official' | 'personal' | null;
+      if (savedFilterType === 'official' || savedFilterType === 'personal') {
+        setFilterType(savedFilterType);
       }
       
       const globalSettings = await getGlobalSettings();
@@ -71,6 +128,11 @@ export default function AllTasksV2Page() {
     };
     init();
   }, []);
+
+  const handleFilterTypeChange = (type: 'official' | 'personal') => {
+    setFilterType(type);
+    localStorage.setItem('hw_all_tasks_filter_type', type);
+  };
 
   const handleLayoutChange = (mode: 'vertical' | 'horizontal') => {
     setLayoutMode(mode);
@@ -115,6 +177,7 @@ export default function AllTasksV2Page() {
     }
   };
 
+  // Status mapping for teacher columns
   const mappedTeacherColStatus = useMemo(() => {
     const statusMap = new Map<string, string>();
     childTasks.forEach(task => {
@@ -134,8 +197,10 @@ export default function AllTasksV2Page() {
     return 'text-rose-500 font-bold';
   };
 
-  // Overall statistics for top summary banner
-  const stats = useMemo(() => {
+  // -------------------------------------------------------------
+  // 1. DATA PROCESSING FOR OFFICIAL (TEACHER SHEET) TASKS
+  // -------------------------------------------------------------
+  const officialStats = useMemo(() => {
     let checkedCount = 0;
     let waitingCount = 0;
     let overdueCount = 0;
@@ -167,8 +232,7 @@ export default function AllTasksV2Page() {
     return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
   }, [teacherCols, mappedTeacherColStatus]);
 
-  // Group into Stacks per Subject
-  const subjectStacks = useMemo(() => {
+  const officialSubjectStacks = useMemo(() => {
     const sMap = new Map<string, TeacherColumn[]>();
 
     teacherCols.forEach(col => {
@@ -232,16 +296,130 @@ export default function AllTasksV2Page() {
     return result;
   }, [teacherCols, mappedTeacherColStatus]);
 
-  // Sorted stacks depending on hideCompleted toggle (Sort by highest pending when hiding completed)
-  const displayedStacks = useMemo(() => {
-    if (!hideCompleted) return subjectStacks;
-    return [...subjectStacks].sort((a, b) => {
+  const displayedOfficialStacks = useMemo(() => {
+    if (!hideCompleted) return officialSubjectStacks;
+    return [...officialSubjectStacks].sort((a, b) => {
       if (b.pending !== a.pending) {
         return b.pending - a.pending;
       }
       return a.subject.localeCompare(b.subject);
     });
-  }, [subjectStacks, hideCompleted]);
+  }, [officialSubjectStacks, hideCompleted]);
+
+  // -------------------------------------------------------------
+  // 2. DATA PROCESSING FOR PERSONAL (PRIVATE NOTES) TASKS
+  // -------------------------------------------------------------
+  const personalTasks = useMemo(() => {
+    return childTasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id));
+  }, [childTasks]);
+
+  const personalStats = useMemo(() => {
+    const todayStr = getTodayDateString();
+    let checkedCount = 0;
+    let waitingCount = 0;
+    let overdueCount = 0;
+    let newCount = 0;
+    let totalCount = personalTasks.length;
+
+    personalTasks.forEach(task => {
+      if (task.status === 'Verified') {
+        checkedCount++;
+      } else if (task.status === 'Done') {
+        waitingCount++;
+      } else {
+        const isOverdue = isPersonalTaskOverdue(task, todayStr);
+        if (isOverdue) {
+          overdueCount++;
+        } else {
+          newCount++;
+        }
+      }
+    });
+
+    return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
+  }, [personalTasks]);
+
+  const personalSubjectStacks = useMemo(() => {
+    const todayStr = getTodayDateString();
+    const sMap = new Map<string, ChildTask[]>();
+
+    personalTasks.forEach(task => {
+      const subject = task.subject?.trim() || 'อื่นๆ';
+      if (!sMap.has(subject)) {
+        sMap.set(subject, []);
+      }
+      sMap.get(subject)!.push(task);
+    });
+
+    const result: {
+      subject: string;
+      tasks: { task: ChildTask; seq: number }[];
+      total: number;
+      checked: number;
+      pending: number;
+      overdue: number;
+      waiting: number;
+      progress: number;
+    }[] = [];
+
+    Array.from(sMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(subject => {
+      const rawList = [...sMap.get(subject)!];
+      // Sort chronological ascending to assign sequence #1, #2, #3...
+      rawList.sort((a, b) => getTimestamp(a.created_at) - getTimestamp(b.created_at));
+      const sequencedList = rawList.map((task, idx) => ({ task, seq: idx + 1 }));
+
+      // Sort descending for display (newest on top / left)
+      sequencedList.sort((a, b) => b.seq - a.seq);
+
+      let checked = 0;
+      let overdue = 0;
+      let waiting = 0;
+
+      sequencedList.forEach(({ task }) => {
+        if (task.status === 'Verified') {
+          checked++;
+        } else if (task.status === 'Done') {
+          waiting++;
+        } else {
+          const isOverdue = isPersonalTaskOverdue(task, todayStr);
+          if (isOverdue) overdue++;
+        }
+      });
+
+      const total = sequencedList.length;
+      const progress = total === 0 ? 0 : Math.round((checked / total) * 100);
+
+      result.push({
+        subject,
+        tasks: sequencedList,
+        total,
+        checked,
+        pending: total - checked,
+        overdue,
+        waiting,
+        progress
+      });
+    });
+
+    return result;
+  }, [personalTasks]);
+
+  const displayedPersonalStacks = useMemo(() => {
+    if (!hideCompleted) return personalSubjectStacks;
+    return [...personalSubjectStacks].sort((a, b) => {
+      if (b.pending !== a.pending) {
+        return b.pending - a.pending;
+      }
+      return a.subject.localeCompare(b.subject);
+    });
+  }, [personalSubjectStacks, hideCompleted]);
+
+  // Current active stats & stacks based on filterType
+  const currentStats = filterType === 'official' ? officialStats : personalStats;
+
+  // Counts for toggle buttons
+  const countOfficialPending = officialStats.totalCount - officialStats.checkedCount;
+  const countPersonalPending = personalStats.totalCount - personalStats.checkedCount;
 
   if (!studentName) {
     return (
@@ -258,8 +436,10 @@ export default function AllTasksV2Page() {
     );
   }
 
-  // Render individual task tile helper
-  const renderTaskTile = (col: TeacherColumn, stackSubject: string) => {
+  // -------------------------------------------------------------
+  // RENDER TILE HELPERS
+  // -------------------------------------------------------------
+  const renderOfficialTaskTile = (col: TeacherColumn, stackSubject: string) => {
     const seq = col.sequence || 0;
     const mappedStatus = mappedTeacherColStatus.get(col.id);
     const isMapped = mappedStatus !== undefined;
@@ -297,7 +477,8 @@ export default function AllTasksV2Page() {
           setSelectedTaskModal({
             subject: stackSubject,
             seq,
-            col,
+            taskType: 'official',
+            taskName: col.column_name,
             status: statusKey,
             statusText
           });
@@ -321,12 +502,84 @@ export default function AllTasksV2Page() {
           cardBg
         )}
       >
-        {/* Sequence Number */}
         <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
           {seq}
         </span>
+        <div className="mt-1 flex items-center justify-center">
+          {iconNode}
+        </div>
+      </div>
+    );
+  };
 
-        {/* Status Icon (Monotone Lucide Icon) */}
+  const renderPersonalTaskTile = (task: ChildTask, seq: number, stackSubject: string) => {
+    const todayStr = getTodayDateString();
+    const isOverdue = isPersonalTaskOverdue(task, todayStr);
+
+    let cardBg = "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
+    let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOverdue ? 'Overdue' : 'New';
+    let statusText = isOverdue ? "เกินกำหนดส่งงาน (ยังไม่เสร็จ)" : "งานที่ต้องทำ (ยังไม่เสร็จ)";
+    let iconNode = isOverdue ? (
+      <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-700 shrink-0" />
+    ) : (
+      <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-700 shrink-0" />
+    );
+
+    if (task.status === 'Verified') {
+      cardBg = "bg-emerald-50/40 hover:bg-emerald-200 text-emerald-950 border-emerald-400 shadow-2xs";
+      iconNode = <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />;
+      statusKey = 'Checked';
+      statusText = "ตรวจความเรียบร้อยแล้ว (เสร็จสมบูรณ์)";
+    } else if (task.status === 'Done') {
+      cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
+      iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
+      statusKey = 'WaitingTeacher';
+      statusText = "ทำเสร็จแล้ว (รอตรวจ)";
+    } else if (isOverdue) {
+      cardBg = "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs";
+    }
+
+    return (
+      <div
+        key={task.id || `personal-${stackSubject}-${seq}`}
+        onClick={() => {
+          setHoveredTask(null);
+          setSelectedTaskModal({
+            subject: stackSubject,
+            seq,
+            taskType: 'personal',
+            taskName: task.task_name,
+            assignedDate: task.assigned_date || task.date,
+            dueDate: task.due_date,
+            date: task.date,
+            note: task.note,
+            tags: task.tags,
+            status: statusKey,
+            statusText
+          });
+        }}
+        onMouseEnter={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const showBelow = rect.top < 130;
+          setHoveredTask({
+            x: rect.left + rect.width / 2,
+            y: showBelow ? rect.bottom + 8 : rect.top - 8,
+            isBottom: showBelow,
+            subject: stackSubject,
+            seq,
+            name: task.task_name,
+            statusText
+          });
+        }}
+        onMouseLeave={() => setHoveredTask(null)}
+        className={clsx(
+          "relative rounded-xl h-[44px] sm:h-[48px] w-[44px] sm:w-[48px] shrink-0 border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
+          cardBg
+        )}
+      >
+        <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
+          {seq}
+        </span>
         <div className="mt-1 flex items-center justify-center">
           {iconNode}
         </div>
@@ -337,7 +590,7 @@ export default function AllTasksV2Page() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      {/* Header section */}
+      {/* Header section adhering to AGENTS.md standard */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
@@ -345,7 +598,7 @@ export default function AllTasksV2Page() {
             งานทั้งหมด (All Tasks)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            ตารางแสดงสถานะงานทุกวิชาอ้างอิงจากข้อมูลของครู • งานใหม่อยู่ลำดับแรกสุด
+            ตารางแสดงสถานะงานทุกวิชา • สลับดูงานตามชีตครูและงานส่วนตัวได้
           </p>
         </div>
 
@@ -399,6 +652,7 @@ export default function AllTasksV2Page() {
             onClick={handleSync}
             disabled={syncing}
             className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+            title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
           >
             <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
             {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
@@ -406,103 +660,148 @@ export default function AllTasksV2Page() {
         </div>
       </div>
 
-      {/* KPI Summary Cards (5 Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        {/* Total Tasks Card */}
-        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-xl shrink-0">
-            <ListTodo className="w-5 h-5 text-[#597ecf]" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">งานทั้งหมด</p>
-            <p className="text-xl font-black text-[#597ecf]">{stats.totalCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
-          </div>
+      {/* 2-Mode Segmented Control Switcher & Summary Stats Toolbar */}
+      <div className="bg-white p-4 rounded-3xl shadow-sm border border-[#e2e8f0] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+        {/* Left Side: 2-Mode Segmented Control Buttons */}
+        <div className="flex items-center gap-2 overflow-x-auto w-full xl:w-auto pb-1 xl:pb-0">
+          <button
+            onClick={() => handleFilterTypeChange('official')}
+            className={clsx(
+              "px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 shadow-xs",
+              filterType === 'official'
+                ? "bg-[#597ecf] text-white"
+                : "bg-[#eef3fc] text-[#597ecf] hover:bg-[#e2ebf9] border border-[#597ecf]/30"
+            )}
+          >
+            <CheckSquare className="w-4 h-4" />
+            <span>งานตามชีตครู</span>
+            <span className={clsx(
+              "px-2 py-0.5 rounded-full text-xs font-extrabold", 
+              filterType === 'official' ? "bg-white/20 text-white" : "bg-[#597ecf]/20 text-[#597ecf]"
+            )}>
+              {countOfficialPending}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleFilterTypeChange('personal')}
+            className={clsx(
+              "px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 shadow-xs",
+              filterType === 'personal'
+                ? "bg-[#57627a] text-white"
+                : "bg-[#eff2f7] text-[#57627a] hover:bg-[#e2e6eb] border border-[#57627a]/30"
+            )}
+          >
+            <FileText className="w-4 h-4" />
+            <span>งานส่วนตัว</span>
+            <span className={clsx(
+              "px-2 py-0.5 rounded-full text-xs font-extrabold", 
+              filterType === 'personal' ? "bg-white/20 text-white" : "bg-[#57627a]/20 text-[#57627a]"
+            )}>
+              {countPersonalPending}
+            </span>
+          </button>
         </div>
 
-        {/* Checked Card */}
-        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+        {/* Right Side: Integrated Status Summary Group */}
+        <div className="flex items-center gap-2 flex-wrap xl:flex-nowrap justify-start xl:justify-end w-full xl:w-auto">
+          {/* Total */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f4f7fa] rounded-xl border border-[#e2e8f0] text-xs font-medium text-gray-700">
+            <ListTodo className="w-3.5 h-3.5 text-[#597ecf] shrink-0" />
+            <span className="text-gray-500">งานทั้งหมด:</span>
+            <span className="font-extrabold text-[#597ecf]">{currentStats.totalCount}</span>
           </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">ตรวจแล้ว</p>
-            <p className="text-xl font-black text-emerald-600">{stats.checkedCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
-          </div>
-        </div>
 
-        {/* Waiting Teacher Card */}
-        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center text-xl shrink-0">
-            <Clock className="w-5 h-5 text-[#597ecf]" />
+          {/* Checked / Verified */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-medium text-emerald-900">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="text-emerald-700">{filterType === 'official' ? 'ตรวจแล้ว:' : 'เสร็จสมบูรณ์:'}</span>
+            <span className="font-extrabold text-emerald-700">{currentStats.checkedCount}</span>
           </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">รอครูอัปเดต</p>
-            <p className="text-xl font-black text-[#597ecf]">{stats.waitingCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
-          </div>
-        </div>
 
-        {/* Overdue Card */}
-        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl shrink-0">
-            <Flame className="w-5 h-5 text-rose-600" />
+          {/* Waiting / Done */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#eef3fc] rounded-xl border border-[#597ecf]/30 text-xs font-medium text-[#597ecf]">
+            <Clock className="w-3.5 h-3.5 text-[#597ecf] shrink-0" />
+            <span>{filterType === 'official' ? 'รอครูอัปเดต:' : 'ทำเสร็จ (รอตรวจ):'}</span>
+            <span className="font-extrabold">{currentStats.waitingCount}</span>
           </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">งานค้าง (&gt;3 วัน)</p>
-            <p className="text-xl font-black text-rose-600">{stats.overdueCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
-          </div>
-        </div>
 
-        {/* New Tasks Card */}
-        <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
-            <FileText className="w-5 h-5 text-amber-600" />
+          {/* Overdue */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-200 text-xs font-medium text-rose-800">
+            <Flame className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span className="text-rose-700">{filterType === 'official' ? 'งานค้าง (>3 วัน):' : 'เกินกำหนดส่ง:'}</span>
+            <span className="font-extrabold text-rose-700">{currentStats.overdueCount}</span>
           </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">งานใหม่</p>
-            <p className="text-xl font-black text-amber-600">{stats.newCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+
+          {/* New / Pending */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-200 text-xs font-medium text-amber-900">
+            <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="text-amber-700">{filterType === 'official' ? 'งานใหม่:' : 'ยังไม่ทำ:'}</span>
+            <span className="font-extrabold text-amber-700">{currentStats.newCount}</span>
           </div>
         </div>
       </div>
 
-      {/* Main Equalizer Grid (Supports Vertical & Horizontal Layouts) */}
+      {/* Main Content Area */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#597ecf]"></div>
         </div>
+      ) : filterType === 'official' && displayedOfficialStacks.length === 0 ? (
+        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
+          <div className="bg-[#eef3fc] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
+            <CheckCircle2 className="w-8 h-8 text-[#597ecf]" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">ไม่มีข้อมูลงานตามชีตครู</h3>
+          <p className="text-gray-500 mb-6 text-sm max-w-md mx-auto">
+            กดปุ่มด้านล่างเพื่อดึงข้อมูลการบ้านจาก Google Sheet ของคุณครู
+          </p>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="inline-flex items-center bg-[#597ecf] hover:bg-[#486cb8] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
+            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
+          </button>
+        </div>
+      ) : filterType === 'personal' && displayedPersonalStacks.length === 0 ? (
+        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
+          <div className="bg-[#eff2f7] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
+            <FileText className="w-8 h-8 text-[#57627a]" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">ยังไม่มีงานส่วนตัว</h3>
+          <p className="text-gray-500 mb-6 text-sm max-w-md mx-auto">
+            คุณสามารถเพิ่มงานส่วนตัวที่ต้องการทำด้วยตนเอง หรือบันทึกเพิ่มเติมได้ที่หน้าการบ้านของฉัน
+          </p>
+          <Link
+            href="/homework"
+            className="inline-flex items-center bg-[#57627a] hover:bg-[#434c60] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            <BookOpen className="w-4 h-4 mr-2" />
+            ไปหน้าการบ้านของฉัน
+          </Link>
+        </div>
       ) : (
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-[#e2e8f0]">
-          
-          {/* Legend Guide Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-[#e2e8f0] text-xs text-gray-600">
-            <div className="flex items-center gap-1 font-bold text-gray-800">
-              <Zap className="w-4 h-4 text-[#597ecf]" />
-              <span>ความหมาย:</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> ตรวจแล้ว</span>
-              <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#597ecf]" /> รอครูอัปเดต</span>
-              <span className="flex items-center gap-1.5"><Flame className="w-3.5 h-3.5 text-rose-600" /> ค้าง &gt;3 วัน</span>
-              <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-amber-600" /> งานใหม่</span>
-            </div>
-          </div>
-
           {/* ======================================================== */}
-          {/* MODE 1: VERTICAL LAYOUT (Subjects as Vertical Columns) */}
+          {/* MODE 1: VERTICAL LAYOUT (Subjects as Vertical Columns)   */}
           {/* ======================================================== */}
           {layoutMode === 'vertical' && (
             <div className="overflow-x-auto pb-4 scrollbar-hover">
               <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
-                {displayedStacks.map((stack) => {
+                
+                {/* 1. Official Mode Vertical Columns */}
+                {filterType === 'official' && displayedOfficialStacks.map((stack) => {
                   const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                   return (
                     <div 
-                      key={stack.subject}
+                      key={`official-col-${stack.subject}`}
                       className="w-[66px] sm:w-[76px] flex flex-col bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-1.5 shadow-2xs relative"
                     >
                       {/* Vertical Rotated Subject Header */}
                       <div className="bg-white rounded-xl py-2.5 px-1 border border-[#e2e8f0] shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden">
-                        {/* Mini Status Badge on Top */}
                         <div className="z-10">
                           <span className={clsx(
                             "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
@@ -512,7 +811,6 @@ export default function AllTasksV2Page() {
                           </span>
                         </div>
 
-                        {/* Rotated Subject Text (Truncates with ... when long, anchored to bottom) */}
                         <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
                           <span 
                             className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
@@ -522,7 +820,6 @@ export default function AllTasksV2Page() {
                           </span>
                         </div>
 
-                        {/* Total count & Progress bar with gradient matching Dashboard */}
                         <div className="w-full flex flex-col items-center pt-1.5 border-t border-[#e2e8f0] z-10">
                           <div className="flex items-center justify-between w-full px-0.5 text-[9px] sm:text-[10px]">
                             <span className="font-bold text-gray-500 font-mono leading-none">
@@ -546,9 +843,9 @@ export default function AllTasksV2Page() {
                         </div>
                       </div>
 
-                      {/* Compact Task Tiles (Vertical Stack: Newest on Top) */}
+                      {/* Compact Task Tiles */}
                       <div className="flex flex-col gap-1.5">
-                        {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
+                        {visibleTasks.map((col) => renderOfficialTaskTile(col, stack.subject))}
 
                         {visibleTasks.length === 0 && (
                           <div className="py-4 text-center bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex flex-col items-center justify-center gap-1">
@@ -560,21 +857,91 @@ export default function AllTasksV2Page() {
                     </div>
                   );
                 })}
+
+                {/* 2. Personal Mode Vertical Columns */}
+                {filterType === 'personal' && displayedPersonalStacks.map((stack) => {
+                  const visibleTasks = hideCompleted ? stack.tasks.filter(item => item.task.status !== 'Verified') : stack.tasks;
+
+                  return (
+                    <div 
+                      key={`personal-col-${stack.subject}`}
+                      className="w-[66px] sm:w-[76px] flex flex-col bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-1.5 shadow-2xs relative"
+                    >
+                      {/* Vertical Rotated Subject Header */}
+                      <div className="bg-white rounded-xl py-2.5 px-1 border border-[#e2e8f0] shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden">
+                        <div className="z-10">
+                          <span className={clsx(
+                            "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
+                            stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                          )}>
+                            {stack.pending > 0 ? `-${stack.pending}` : '✓'}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
+                          <span 
+                            className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
+                            title={stack.subject}
+                          >
+                            {stack.subject}
+                          </span>
+                        </div>
+
+                        <div className="w-full flex flex-col items-center pt-1.5 border-t border-[#e2e8f0] z-10">
+                          <div className="flex items-center justify-between w-full px-0.5 text-[9px] sm:text-[10px]">
+                            <span className="font-bold text-gray-500 font-mono leading-none">
+                              {stack.total}
+                            </span>
+                            <span className={clsx("font-mono leading-none", getProgressColorClass(stack.progress))}>
+                              {stack.progress}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-[#f4f7fa] rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div 
+                              className={clsx(
+                                "h-full transition-all duration-700 rounded-full",
+                                stack.progress === 100 
+                                  ? "bg-emerald-500" 
+                                  : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
+                              )}
+                              style={{ width: `${stack.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Compact Task Tiles */}
+                      <div className="flex flex-col gap-1.5">
+                        {visibleTasks.map(({ task, seq }) => renderPersonalTaskTile(task, seq, stack.subject))}
+
+                        {visibleTasks.length === 0 && (
+                          <div className="py-4 text-center bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex flex-col items-center justify-center gap-1">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span className="text-[10px] text-emerald-700 font-bold">ครบแล้ว</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
               </div>
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* MODE 2: HORIZONTAL LAYOUT (Subjects as Horizontal Rows) */}
+          {/* MODE 2: HORIZONTAL LAYOUT (Subjects as Horizontal Rows)  */}
           {/* ======================================================== */}
           {layoutMode === 'horizontal' && (
             <div className="flex flex-col gap-3 w-full">
-              {displayedStacks.map((stack) => {
+              
+              {/* 1. Official Mode Horizontal Rows */}
+              {filterType === 'official' && displayedOfficialStacks.map((stack) => {
                 const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                 return (
                   <div 
-                    key={stack.subject}
+                    key={`official-row-${stack.subject}`}
                     className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
                   >
                     {/* Horizontal Subject Info Card (Left) */}
@@ -613,9 +980,9 @@ export default function AllTasksV2Page() {
                       </div>
                     </div>
 
-                    {/* Task Tiles Strip (Horizontal scrollable row: Newest on Left) */}
+                    {/* Task Tiles Strip */}
                     <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1.5 px-1 min-w-0 scrollbar-hover">
-                      {visibleTasks.map((col) => renderTaskTile(col, stack.subject))}
+                      {visibleTasks.map((col) => renderOfficialTaskTile(col, stack.subject))}
 
                       {visibleTasks.length === 0 && (
                         <div className="py-2.5 px-4 text-xs text-emerald-700 font-bold bg-white/60 rounded-xl border border-dashed border-emerald-200 flex items-center gap-1.5">
@@ -627,6 +994,67 @@ export default function AllTasksV2Page() {
                   </div>
                 );
               })}
+
+              {/* 2. Personal Mode Horizontal Rows */}
+              {filterType === 'personal' && displayedPersonalStacks.map((stack) => {
+                const visibleTasks = hideCompleted ? stack.tasks.filter(item => item.task.status !== 'Verified') : stack.tasks;
+
+                return (
+                  <div 
+                    key={`personal-row-${stack.subject}`}
+                    className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
+                  >
+                    {/* Horizontal Subject Info Card (Left) */}
+                    <div className="w-full md:w-[220px] shrink-0 bg-white rounded-xl p-3 border border-[#e2e8f0] shadow-2xs flex flex-row md:flex-col justify-between items-center md:items-start gap-2">
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-sm font-black text-gray-900 tracking-tight line-clamp-1" title={stack.subject}>
+                          {stack.subject}
+                        </span>
+                        <span className={clsx(
+                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 shadow-2xs ml-2",
+                          stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                        )}>
+                          {stack.pending > 0 ? `-${stack.pending}` : '✓ ครบ'}
+                        </span>
+                      </div>
+
+                      <div className="w-full flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-[#e2e8f0] md:border-t-0 md:pt-0">
+                        <span className="text-[11px] font-medium text-gray-500">
+                          ทั้งหมด: <strong className="text-gray-800">{stack.total}</strong> ชิ้น
+                        </span>
+                        <span className={clsx("text-xs font-mono font-black", getProgressColorClass(stack.progress))}>
+                          {stack.progress}%
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-[#f4f7fa] rounded-full h-2 overflow-hidden shadow-inner">
+                        <div 
+                          className={clsx(
+                            "h-full transition-all duration-700 rounded-full",
+                            stack.progress === 100 
+                              ? "bg-emerald-500" 
+                              : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
+                          )}
+                          style={{ width: `${stack.progress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Task Tiles Strip */}
+                    <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1.5 px-1 min-w-0 scrollbar-hover">
+                      {visibleTasks.map(({ task, seq }) => renderPersonalTaskTile(task, seq, stack.subject))}
+
+                      {visibleTasks.length === 0 && (
+                        <div className="py-2.5 px-4 text-xs text-emerald-700 font-bold bg-white/60 rounded-xl border border-dashed border-emerald-200 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>ตรวจครบเรียบร้อยแล้ว</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
             </div>
           )}
 
@@ -675,6 +1103,7 @@ export default function AllTasksV2Page() {
             <button 
               onClick={() => setSelectedTaskModal(null)}
               className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              title="ปิด"
             >
               <X className="w-5 h-5" />
             </button>
@@ -688,11 +1117,24 @@ export default function AllTasksV2Page() {
                 selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-700",
                 selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-700"
               )}>
-                {selectedTaskModal.status === 'Checked' ? <CheckCircle2 className="w-6 h-6 text-emerald-600" /> : selectedTaskModal.status === 'WaitingTeacher' ? <Clock className="w-6 h-6 text-[#597ecf]" /> : selectedTaskModal.status === 'Overdue' ? <Flame className="w-6 h-6 text-rose-600" /> : <FileText className="w-6 h-6 text-amber-600" />}
+                {selectedTaskModal.status === 'Checked' ? (
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                ) : selectedTaskModal.status === 'WaitingTeacher' ? (
+                  <Clock className="w-6 h-6 text-[#597ecf]" />
+                ) : selectedTaskModal.status === 'Overdue' ? (
+                  <Flame className="w-6 h-6 text-rose-600" />
+                ) : (
+                  <FileText className="w-6 h-6 text-amber-600" />
+                )}
               </div>
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2.5 py-0.5 rounded-md">
-                  {selectedTaskModal.subject} • ชิ้นที่ #{selectedTaskModal.seq}
+                <span className={clsx(
+                  "text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md border",
+                  selectedTaskModal.taskType === 'official' 
+                    ? "text-[#597ecf] bg-[#eef3fc] border-[#597ecf]/30" 
+                    : "text-[#57627a] bg-[#eff2f7] border-[#57627a]/30"
+                )}>
+                  {selectedTaskModal.subject} • {selectedTaskModal.taskType === 'official' ? `ชิ้นที่ #${selectedTaskModal.seq}` : `งานส่วนตัวชิ้นที่ #${selectedTaskModal.seq}`}
                 </span>
                 <h3 className="text-lg font-extrabold text-gray-900 mt-1">รายละเอียดงาน</h3>
               </div>
@@ -701,9 +1143,62 @@ export default function AllTasksV2Page() {
             {/* Task Info Content */}
             <div className="bg-[#f4f7fa] rounded-2xl p-4 space-y-3 border border-[#e2e8f0] mb-5">
               <div>
-                <p className="text-xs text-gray-400 font-semibold mb-0.5">ชื่องานที่ครูสั่ง</p>
-                <p className="text-sm font-bold text-gray-900">{selectedTaskModal.col.column_name}</p>
+                <p className="text-xs text-gray-400 font-semibold mb-0.5">
+                  {selectedTaskModal.taskType === 'official' ? 'ชื่องานที่ครูสั่ง' : 'ชื่องาน / รายละเอียด'}
+                </p>
+                <p className="text-sm font-bold text-gray-900">{selectedTaskModal.taskName}</p>
               </div>
+
+              {selectedTaskModal.assignedDate && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-gray-500" /> วันที่มอบหมาย
+                  </p>
+                  <p className="text-xs font-bold text-gray-800">{selectedTaskModal.assignedDate}</p>
+                </div>
+              )}
+
+              {selectedTaskModal.dueDate && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-gray-500" /> กำหนดส่งงาน
+                  </p>
+                  <p className="text-xs font-bold text-gray-800">{selectedTaskModal.dueDate}</p>
+                </div>
+              )}
+
+              {!selectedTaskModal.assignedDate && !selectedTaskModal.dueDate && selectedTaskModal.date && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-gray-500" /> วันที่
+                  </p>
+                  <p className="text-xs font-bold text-gray-800">{selectedTaskModal.date}</p>
+                </div>
+              )}
+
+              {selectedTaskModal.tags && selectedTaskModal.tags.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-gray-500" /> ประเภทงาน
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {selectedTaskModal.tags.map((tag) => (
+                      <span key={tag} className="text-[11px] font-bold px-2 py-0.5 bg-white border border-[#e2e8f0] text-gray-700 rounded-md">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedTaskModal.note && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-0.5">Note บันทึกเพิ่มเติม</p>
+                  <p className="text-xs font-medium text-gray-700 bg-white p-2 rounded-xl border border-[#e2e8f0]">
+                    {selectedTaskModal.note}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <p className="text-xs text-gray-400 font-semibold mb-0.5">สถานะปัจจุบัน</p>
@@ -724,7 +1219,7 @@ export default function AllTasksV2Page() {
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
               <Link
-                href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}`}
+                href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}&type=${selectedTaskModal.taskType}`}
                 className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" /> ไปหน้าการบ้านวิชานี้

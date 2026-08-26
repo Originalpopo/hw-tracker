@@ -45,3 +45,7 @@ SKILL.md
 AGENTS.md
 CLAUDE.md
 "Firebase SDK.txt"
+
+# Local Database Backups (Sensitive Student Data)
+backups/
+*.bak

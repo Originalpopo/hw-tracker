@@ -27,7 +27,9 @@ export interface ChildTask {
   updated_at: Timestamp | Date;
   teacher_column_id?: string | null;
   student_name: string; // The child's name for filtering
-  date?: string; // Date of the task (e.g., YYYY-MM-DD)
+  date?: string; // Legacy Date of the task (e.g., YYYY-MM-DD)
+  assigned_date?: string; // วันที่มอบหมาย (e.g., YYYY-MM-DD)
+  due_date?: string; // กำหนดส่งงาน (e.g., YYYY-MM-DD)
   note?: string; // Additional details for the task
   task_type?: 'official' | 'personal'; // Type of task: official from Google Sheet or personal note
   tags?: string[]; // Custom tags e.g. ['งานในคาบ', 'การบ้าน']

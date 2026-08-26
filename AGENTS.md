@@ -70,3 +70,9 @@ All interactive buttons across the application must follow the clean standard es
 ## Verification & Subagent Policy
 - **No Automated Browser Subagent**: Do NOT use `browser_subagent` for UI verification in `hw-tracker` to keep development fast and responsive.
 - **Direct User Verification**: Validate code correctness via dev server compilation logs (Turbopack) and let the user preview changes directly at `http://localhost:3000`.
+
+## 6. Database Backup & Disaster Recovery Policy
+- **Automatic Pre-Flight Backup**: Before performing any major database migration, schema modification, or architectural task merge revamp, the AI **MUST automatically run `cmd.exe /c npm run backup`** to create a timestamped JSON snapshot in `backups/`.
+- **Zero Prompt Requirement**: The user does NOT need to manually remind or ask for a backup each time; the AI is strictly required to execute it proactively prior to data-affecting operations.
+- **Restore Capability**: In the event of an unintended data loss or broken migration, execute `cmd.exe /c npm run restore` or `node scripts/restore.mjs [backup-file.json]` to instantly restore the full Firestore state.
+
