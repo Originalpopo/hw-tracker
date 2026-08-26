@@ -397,7 +397,7 @@ export default function DashboardOverview() {
                         style={{ width: animateBars ? `${officialPercent}%` : '0%' }}
                       >
                         {officialPercent > 0 && (
-                          <span className="absolute -right-3.5 top-1/2 transform -translate-y-1/2 text-2xl drop-shadow-md z-10 pointer-events-none">
+                          <span className="absolute -right-3.5 top-1/2 -translate-y-1/2 text-2xl leading-none drop-shadow-md z-10 pointer-events-none flex items-center justify-center">
                             {officialPercent === 100 ? '🏆' : <span className="inline-block rotate-45">✈️</span>}
                           </span>
                         )}
@@ -426,7 +426,12 @@ export default function DashboardOverview() {
                         style={{ width: animateBars ? `${personalPercent}%` : '0%' }}
                       >
                         {personalPercent > 0 && (
-                          <span className="absolute -right-3.5 top-1/2 transform -translate-y-1/2 text-2xl drop-shadow-md z-10 pointer-events-none">
+                          <span className={clsx(
+                            "absolute leading-none drop-shadow-md z-10 pointer-events-none flex items-center justify-center",
+                            personalPercent === 100 
+                              ? "-right-3.5 top-1/2 -translate-y-1/2 text-2xl" 
+                              : "-right-5 top-1/2 -translate-y-[72%] text-4xl"
+                          )}>
                             {personalPercent === 100 ? '🏆' : <span className="inline-block scale-x-[-1]">🏎️</span>}
                           </span>
                         )}
