@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
-import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, RefreshCcw, StickyNote, RotateCcw, CheckCircle2, GraduationCap, Home, CheckSquare, FileText, AlertTriangle } from 'lucide-react';
+import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2, X, Save, Trash2, Filter, RefreshCcw, StickyNote, RotateCcw, CheckCircle2, GraduationCap, Home, CheckSquare, FileText, AlertTriangle, History } from 'lucide-react';
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, addChildTask, updateChildTaskStatus, updateChildTask, deleteChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -38,38 +38,23 @@ function HomeworkDashboard() {
 
   const availableSubjects = useMemo(() => {
     const subjects = new Set<string>();
-    if (teacherCols.length > 0) {
-      teacherCols.forEach(col => subjects.add(col.subject));
-    } else {
-      DEFAULT_SUBJECTS.forEach(s => subjects.add(s));
-    }
-    subjects.delete('อื่นๆ');
-    const result = Array.from(subjects).sort();
-    result.push('อื่นๆ');
-    return result;
-  }, [teacherCols]);
-
-  useEffect(() => {
-    if (filterSubject !== 'All') {
-      if (availableSubjects.includes(filterSubject)) {
-        setNewSubject(filterSubject);
-        setCustomSubject('');
-      } else {
-        setNewSubject('อื่นๆ');
-        setCustomSubject(filterSubject);
-      }
-    } else if (availableSubjects.length > 0 && !availableSubjects.includes(newSubject)) {
-      setNewSubject(availableSubjects[0]);
-    }
-  }, [availableSubjects, filterSubject]);
+    DEFAULT_SUBJECTS.forEach(s => subjects.add(s));
+    tasks.forEach(t => {
+      if (t.subject) subjects.add(t.subject);
+    });
+    return Array.from(subjects);
+  }, [tasks]);
 
   useEffect(() => {
     const urlSubject = searchParams.get('subject');
+    const urlType = searchParams.get('type') as 'official' | 'personal' | null;
+
     if (urlSubject) {
       setFilterSubject(urlSubject);
-      localStorage.setItem('hw_filter_subject', urlSubject);
+    } else {
+      setFilterSubject('All');
     }
-    const urlType = searchParams.get('type') as 'official' | 'personal' | null;
+
     if (urlType === 'official' || urlType === 'personal') {
       setFilterType(urlType);
     }
@@ -79,25 +64,20 @@ function HomeworkDashboard() {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
-      const oldUrl = localStorage.getItem('hw_sheet_url');
-
-      if (!savedName || (!savedUrlsStr && !oldUrl)) {
-        const globalSettings = await getGlobalSettings();
-        if (globalSettings) {
-          savedName = globalSettings.student_name;
-          savedUrlsStr = globalSettings.sheet_urls;
-          if (savedName) localStorage.setItem('hw_student_name', savedName);
-          if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
-        }
-      }
       
-      setStudentName(savedName || null);
+      const globalSettings = await getGlobalSettings();
+      if (globalSettings) {
+        savedName = globalSettings.student_name || savedName;
+        savedUrlsStr = globalSettings.sheet_urls || savedUrlsStr;
+        if (savedName) localStorage.setItem('hw_student_name', savedName);
+        if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
+      }
 
+      setStudentName(savedName || null);
+      
       let urls: string[] = [];
       if (savedUrlsStr) {
         urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
-      } else if (oldUrl) {
-        urls = [oldUrl];
       }
       setSheetUrls(urls);
 
@@ -106,25 +86,12 @@ function HomeworkDashboard() {
       } else {
         setLoading(false);
       }
-
-      const savedFilter = localStorage.getItem('hw_filter_subject');
-      const urlSubject = searchParams.get('subject');
-      if (urlSubject) {
-        setFilterSubject(urlSubject);
-        localStorage.setItem('hw_filter_subject', urlSubject);
-      } else if (savedFilter) {
-        setFilterSubject(savedFilter);
-      }
-
-      const urlType = searchParams.get('type') as 'official' | 'personal' | null;
-      if (urlType === 'official' || urlType === 'personal') {
-        setFilterType(urlType);
-      }
     };
     init();
   }, []);
 
   const loadTasks = async (name: string) => {
+    setLoading(true);
     try {
       const [data, cols] = await Promise.all([
         getChildTasks(name),
@@ -183,6 +150,13 @@ function HomeworkDashboard() {
     if (!finalSubject) return;
 
     try {
+      const initialHistory = [{
+        revision: 1,
+        action: 'created' as const,
+        note: `สร้างงานส่วนตัว: ${newTaskName.trim()}`,
+        timestamp: Date.now()
+      }];
+
       const newTaskId = await addChildTask({
         student_name: studentName,
         subject: finalSubject,
@@ -194,7 +168,9 @@ function HomeworkDashboard() {
         assigned_date: newAssignedDate,
         due_date: newDueDate,
         note: newNote.trim(),
-        tags: newTags
+        tags: newTags,
+        revision_count: 1,
+        revision_history: initialHistory
       });
 
       const newTask: ChildTask = {
@@ -210,6 +186,8 @@ function HomeworkDashboard() {
         due_date: newDueDate,
         note: newNote.trim(),
         tags: newTags,
+        revision_count: 1,
+        revision_history: initialHistory,
         created_at: new Date(),
         updated_at: new Date()
       };
@@ -228,8 +206,59 @@ function HomeworkDashboard() {
   const handleUpdateStatus = async (taskId: string, status: TaskStatus) => {
     try {
       const task = tasks.find(t => t.id === taskId);
-      setTasks(tasks.map(t => t.id === taskId ? { ...t, status } : t));
-      await updateChildTaskStatus(taskId, status);
+      if (!task) return;
+
+      let newRevision = task.revision_count || 1;
+      const history = [...(task.revision_history || [])];
+
+      if (history.length === 0) {
+        history.push({
+          revision: newRevision,
+          action: 'created',
+          note: `สร้างงาน: ${task.task_name}`,
+          timestamp: (task.created_at as any)?.toMillis?.() || Date.now()
+        });
+      }
+
+      if (status === 'Rework') {
+        newRevision += 1;
+        history.push({
+          revision: newRevision,
+          action: 'rework_requested',
+          note: `ขอให้แก้ไขใหม่ (เข้าสู่รอบที่ ${newRevision})`,
+          timestamp: Date.now()
+        });
+      } else if (status === 'Submitted') {
+        history.push({
+          revision: newRevision,
+          action: 'submitted',
+          note: 'ส่งงานให้ครูตรวจ',
+          timestamp: Date.now()
+        });
+      } else if (status === 'Verified') {
+        history.push({
+          revision: newRevision,
+          action: 'verified',
+          note: 'ตรวจผ่านเรียบร้อยสมบูรณ์',
+          timestamp: Date.now()
+        });
+      } else if (status === 'Done') {
+        history.push({
+          revision: newRevision,
+          action: 'parent_reviewed',
+          note: 'ทำเสร็จเรียบร้อย (รอตรวจ/รอส่ง)',
+          timestamp: Date.now()
+        });
+      }
+
+      const updates: Partial<ChildTask> = {
+        status,
+        revision_count: newRevision,
+        revision_history: history
+      };
+
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+      await updateChildTask(taskId, updates);
 
       if (status === 'Verified') {
         confetti({
@@ -254,14 +283,43 @@ function HomeworkDashboard() {
     }
   };
 
-  const handleDelete = async (taskId: string) => {
-    if (!studentName || !window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบงานนี้?')) return;
-    try {
-      setTasks(tasks.filter(t => t.id !== taskId));
-      await deleteChildTask(taskId);
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      loadTasks(studentName);
+  const handleDelete = async (task: ChildTask) => {
+    if (!studentName || !task.id) return;
+    const isPersonal = !task.teacher_column_id;
+
+    if (isPersonal) {
+      if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบงานส่วนตัว "${task.task_name}"?`)) return;
+      try {
+        setTasks(tasks.filter(t => t.id !== task.id));
+        await deleteChildTask(task.id);
+      } catch (error) {
+        console.error('Error deleting task:', error);
+        loadTasks(studentName);
+      }
+    } else {
+      // Official task that has an original personal draft (a merged into A)
+      if (!task.original_personal_name) return;
+      if (!window.confirm(`คุณต้องการลบประวัติงานส่วนตัวเดิม "${task.original_personal_name}" ออกจากงานหลัก "${task.task_name}" ใช่หรือไม่?\n(ชื่องานชีตครูและสถานะจะยังคงอยู่ตามเดิม)`)) return;
+      try {
+        const history = [...(task.revision_history || [])];
+        history.push({
+          revision: task.revision_count || 1,
+          action: 'parent_reviewed',
+          note: `ลบประวัติงานส่วนตัวเดิม (${task.original_personal_name}) ออกจากงานหลัก`,
+          timestamp: Date.now()
+        });
+
+        const updates: Partial<ChildTask> = {
+          original_personal_name: '',
+          revision_history: history
+        };
+
+        setTasks(tasks.map(t => t.id === task.id ? { ...t, ...updates } : t));
+        await updateChildTask(task.id, updates);
+      } catch (error) {
+        console.error('Error removing draft from task:', error);
+        loadTasks(studentName);
+      }
     }
   };
 
@@ -279,6 +337,29 @@ function HomeworkDashboard() {
     });
     return Array.from(subjects).sort();
   }, [tasks, filterType]);
+
+  // Safety synchronization: if current filterSubject is not in uniqueSubjects, reset to 'All'
+  useEffect(() => {
+    if (filterSubject !== 'All' && uniqueSubjects.length > 0 && !uniqueSubjects.includes(filterSubject)) {
+      setFilterSubject('All');
+    }
+  }, [uniqueSubjects, filterSubject]);
+
+  const handleFilterTypeChange = (newType: 'official' | 'personal') => {
+    setFilterType(newType);
+    const newRelevantTasks = tasks.filter(t => 
+      newType === 'official' 
+        ? (t.task_type === 'official' || !!t.teacher_column_id)
+        : (t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id))
+    );
+    const newSubjects = new Set<string>();
+    newRelevantTasks.forEach(t => {
+      if (t.subject && t.subject.trim()) newSubjects.add(t.subject.trim());
+    });
+    if (filterSubject !== 'All' && !newSubjects.has(filterSubject)) {
+      setFilterSubject('All');
+    }
+  };
 
   const countOfficial = useMemo(() => {
     return tasks.filter(t => (t.task_type === 'official' || !!t.teacher_column_id) && t.status !== 'Verified').length;
@@ -386,7 +467,7 @@ function HomeworkDashboard() {
         {/* 2-Mode Segmented Control Switcher */}
         <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
           <button
-            onClick={() => setFilterType('official')}
+            onClick={() => handleFilterTypeChange('official')}
             className={clsx(
               "px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95",
               filterType === 'official'
@@ -402,7 +483,7 @@ function HomeworkDashboard() {
           </button>
 
           <button
-            onClick={() => setFilterType('personal')}
+            onClick={() => handleFilterTypeChange('personal')}
             className={clsx(
               "px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95",
               filterType === 'personal'
@@ -423,11 +504,10 @@ function HomeworkDashboard() {
           <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[38px] w-full md:w-auto self-stretch md:self-auto">
             <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
             <select
-              value={filterSubject}
+              value={uniqueSubjects.includes(filterSubject) ? filterSubject : 'All'}
               onChange={(e) => {
                 const val = e.target.value;
                 setFilterSubject(val);
-                localStorage.setItem('hw_filter_subject', val);
                 if (val !== 'All') {
                   if (availableSubjects.includes(val)) {
                     setNewSubject(val);
@@ -710,21 +790,39 @@ function HomeworkDashboard() {
                 <TaskCard key={task.id} task={task} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask} onDelete={handleDelete} onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}>
                   <div className="flex gap-2 mt-3">
                     {isPersonal ? (
-                      <button 
-                        onClick={() => handleUpdateStatus(task.id!, 'Verified')} 
-                        className="flex-1 bg-[#57627a] hover:bg-[#434c60] text-white px-3.5 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
-                        title="ตรวจความเรียบร้อยและปิดงานสำเร็จทันที"
-                      >
-                        <CheckCircle2 className="w-4 h-4" /> ตรวจแล้ว (ปิดงานทันที)
-                      </button>
+                      <>
+                        <button 
+                          onClick={() => handleUpdateStatus(task.id!, 'Verified')} 
+                          className="flex-1 bg-[#57627a] hover:bg-[#434c60] text-white px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          title="ตรวจความเรียบร้อยและปิดงานสำเร็จทันที"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> ตรวจแล้ว (ผ่าน)
+                        </button>
+                        <button 
+                          onClick={() => handleUpdateStatus(task.id!, 'Rework')} 
+                          className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                          title="พบจุดผิด ให้เด็กนำกลับไปแก้ไขใหม่ (เพิ่มรอบการแก้)"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" /> ให้แก้
+                        </button>
+                      </>
                     ) : (
-                      <button 
-                        onClick={() => handleUpdateStatus(task.id!, 'Submitted')} 
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
-                        title="ส่งครูที่โรงเรียนแล้ว รอครูอัปเดตคะแนนในชีต"
-                      >
-                        <Send className="w-4 h-4" /> ส่งครูแล้ว
-                      </button>
+                      <>
+                        <button 
+                          onClick={() => handleUpdateStatus(task.id!, 'Submitted')} 
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          title="ส่งครูที่โรงเรียนแล้ว รอครูอัปเดตคะแนนในชีต"
+                        >
+                          <Send className="w-4 h-4" /> ส่งครูแล้ว
+                        </button>
+                        <button 
+                          onClick={() => handleUpdateStatus(task.id!, 'Rework')} 
+                          className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                          title="พบจุดผิด ให้เด็กนำกลับไปแก้ไขใหม่ (เพิ่มรอบการแก้)"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" /> ให้แก้
+                        </button>
+                      </>
                     )}
                   </div>
                 </TaskCard>
@@ -835,6 +933,7 @@ function TaskColumn({ title, icon, tasks, children, bgColor, borderColor, header
 function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(task.task_name);
+  const [editOriginalDraftName, setEditOriginalDraftName] = useState(task.original_personal_name || '');
   const [editAssignedDate, setEditAssignedDate] = useState(task.assigned_date || task.date || '');
   const [editDueDate, setEditDueDate] = useState(task.due_date || '');
   const [editNote, setEditNote] = useState(task.note || '');
@@ -844,21 +943,31 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
 
   const handleSaveEdit = () => {
     const trimmedName = editName.trim();
-    if (trimmedName && (
-      trimmedName !== task.task_name || 
-      editAssignedDate !== (task.assigned_date || task.date || '') ||
-      editDueDate !== (task.due_date || '') || 
-      editNote !== task.note ||
-      JSON.stringify(editTags) !== JSON.stringify(task.tags || [])
-    )) {
-      onUpdateTask(task.id, { 
-        task_name: trimmedName, 
-        assigned_date: editAssignedDate,
-        due_date: editDueDate,
-        date: editAssignedDate, 
-        note: editNote,
-        tags: editTags
-      });
+    const trimmedDraftName = editOriginalDraftName.trim();
+
+    const updates: Partial<ChildTask> = {};
+    if (isPersonal && trimmedName && trimmedName !== task.task_name) {
+      updates.task_name = trimmedName;
+    }
+    if (!isPersonal && trimmedDraftName !== (task.original_personal_name || '')) {
+      updates.original_personal_name = trimmedDraftName;
+    }
+    if (editAssignedDate !== (task.assigned_date || task.date || '')) {
+      updates.assigned_date = editAssignedDate;
+      updates.date = editAssignedDate;
+    }
+    if (editDueDate !== (task.due_date || '')) {
+      updates.due_date = editDueDate;
+    }
+    if (editNote !== (task.note || '')) {
+      updates.note = editNote;
+    }
+    if (JSON.stringify(editTags) !== JSON.stringify(task.tags || [])) {
+      updates.tags = editTags;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onUpdateTask(task.id, updates);
     }
     setIsEditing(false);
   };
@@ -887,6 +996,11 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
               <CheckSquare className="w-2.5 h-2.5" /> ชีตครู
             </span>
           )}
+          {task.revision_count && task.revision_count > 1 && (
+            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+              <History className="w-2.5 h-2.5" /> รอบที่ {task.revision_count}
+            </span>
+          )}
           {task.tags?.includes('งานในคาบ') && (
             <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
               <GraduationCap className="w-3 h-3" /> งานในคาบ
@@ -910,44 +1024,92 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             )}
-            {isPersonal && (
-              <>
-                <button 
-                  onClick={() => {
-                    setIsEditing(true);
-                    setEditName(task.task_name);
-                    setEditAssignedDate(task.assigned_date || task.date || '');
-                    setEditDueDate(task.due_date || '');
-                    setEditNote(task.note || '');
-                    setEditTags(task.tags || []);
-                  }}
-                  className="text-gray-400 hover:text-[#597ecf] p-1 rounded-lg hover:bg-[#eef3fc] cursor-pointer transition-colors"
-                  title="แก้ไขชื่องาน"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-                <button 
-                  onClick={() => onDelete(task.id)}
-                  className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
-                  title="ลบงาน"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
-            )}
+            
+            <button 
+              onClick={() => {
+                setIsEditing(true);
+                setEditName(task.task_name);
+                setEditOriginalDraftName(task.original_personal_name || '');
+                setEditAssignedDate(task.assigned_date || task.date || '');
+                setEditDueDate(task.due_date || '');
+                setEditNote(task.note || '');
+                setEditTags(task.tags || []);
+              }}
+              className="text-gray-400 hover:text-[#597ecf] p-1 rounded-lg hover:bg-[#eef3fc] cursor-pointer transition-colors"
+              title={isPersonal ? "แก้ไขงานส่วนตัว" : "แก้ไขรายละเอียดและร่างงานเดิม"}
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+
+            {isPersonal ? (
+              <button 
+                onClick={() => onDelete(task)}
+                className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                title="ลบงานส่วนตัวนี้"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            ) : task.original_personal_name ? (
+              <button 
+                onClick={() => onDelete(task)}
+                className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                title="ลบประวัติงานส่วนตัวเดิมออกจากงานนี้"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
           </div>
         )}
       </div>
 
       {isEditing ? (
         <div className="mb-2 space-y-2.5 bg-[#f4f7fa] p-3.5 rounded-2xl border border-[#e2e8f0]">
-          <textarea
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            className="w-full text-sm font-medium text-gray-900 bg-white border border-[#e2e8f0] rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#597ecf] resize-none"
-            rows={2}
-            autoFocus
-          />
+          {isPersonal ? (
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">ชื่องานส่วนตัว</label>
+              <textarea
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full text-sm font-medium text-gray-900 bg-white border border-[#e2e8f0] rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#597ecf] resize-none"
+                rows={2}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="bg-[#eff2f7] p-2.5 rounded-xl border border-[#cbd3e0]">
+                <span className="text-[10px] font-bold text-[#57627a] block mb-0.5">
+                  ชื่องานหลัก (อิงตามชีตครู - ล็อกไว้)
+                </span>
+                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">{task.task_name}</p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-600 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-[#597ecf]" /> ชื่องานส่วนตัวเดิม (ร่างเดิม)
+                  </span>
+                  {editOriginalDraftName && (
+                    <button
+                      type="button"
+                      onClick={() => setEditOriginalDraftName('')}
+                      className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+                    >
+                      ลบชื่อร่างเดิม
+                    </button>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={editOriginalDraftName}
+                  onChange={(e) => setEditOriginalDraftName(e.target.value)}
+                  placeholder="เช่น a, การบ้านข้อ 1-5..."
+                  className="w-full text-xs font-semibold text-gray-800 bg-white border border-[#e2e8f0] rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 mb-0.5">วันที่มอบหมาย</label>
@@ -968,13 +1130,16 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
               />
             </div>
           </div>
-          <input 
-            type="text" 
-            value={editNote}
-            onChange={(e) => setEditNote(e.target.value)}
-            placeholder="โน้ตเพิ่มเติม..."
-            className="w-full text-xs text-gray-700 bg-white border border-[#e2e8f0] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
-          />
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 mb-0.5">โน้ตช่วยจำ</label>
+            <input 
+              type="text" 
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              placeholder="โน้ตเพิ่มเติม เช่น หน้า 10-12..."
+              className="w-full text-xs text-gray-700 bg-white border border-[#e2e8f0] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#597ecf]"
+            />
+          </div>
 
           {/* Checklist options in Edit Mode */}
           <div className="pt-1">
@@ -1019,6 +1184,7 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
               onClick={() => { 
                 setIsEditing(false); 
                 setEditName(task.task_name); 
+                setEditOriginalDraftName(task.original_personal_name || '');
                 setEditAssignedDate(task.assigned_date || task.date || ''); 
                 setEditDueDate(task.due_date || ''); 
                 setEditNote(task.note || ''); 
@@ -1039,6 +1205,14 @@ function TaskCard({ task, children, onUpdateTask, onDelete, onUndo }: any) {
       ) : (
         <div className="mb-2">
           <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
+
+          {task.original_personal_name && task.original_personal_name !== task.task_name && (
+            <div className="text-[11px] text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded-md border border-[#cbd3e0] inline-flex items-center gap-1 max-w-full my-1">
+              <span className="font-bold text-gray-400">ร่างเดิม:</span>
+              <span className="truncate font-medium">{task.original_personal_name}</span>
+            </div>
+          )}
+
           {(task.assigned_date || task.due_date || task.date || task.note) && (
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-1.5 text-xs text-gray-500">
               <div className="flex items-center gap-2 flex-wrap text-[11px]">

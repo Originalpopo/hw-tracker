@@ -16,12 +16,20 @@ import {
 
 // --- Types ---
 
-export type TaskStatus = 'Todo' | 'In Progress' | 'Done' | 'Submitted' | 'Rework' | 'Verified';
+export type TaskStatus = 'Todo' | 'In Progress' | 'Done' | 'Submitted' | 'Verified' | 'Rework';
+
+export interface TaskRevisionEvent {
+  revision: number;
+  action: 'created' | 'submitted' | 'parent_reviewed' | 'rework_requested' | 'teacher_linked' | 'verified';
+  note?: string;
+  timestamp: number; // Unix timestamp in milliseconds
+}
 
 export interface ChildTask {
   id?: string;
   subject: string;
   task_name: string;
+  original_personal_name?: string; // Original personal draft name (e.g. 'a') before linking with teacher master ('A')
   status: TaskStatus;
   created_at: Timestamp | Date;
   updated_at: Timestamp | Date;
@@ -33,6 +41,8 @@ export interface ChildTask {
   note?: string; // Additional details for the task
   task_type?: 'official' | 'personal'; // Type of task: official from Google Sheet or personal note
   tags?: string[]; // Custom tags e.g. ['งานในคาบ', 'การบ้าน']
+  revision_count?: number; // Revision / Rework iteration counter (1 for draft, 2 for first rework, etc.)
+  revision_history?: TaskRevisionEvent[]; // Timeline history logs of revisions and actions
 }
 
 export interface TeacherColumn {

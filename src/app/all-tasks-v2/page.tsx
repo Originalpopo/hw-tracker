@@ -18,7 +18,8 @@ import {
   Flame, 
   FileText,
   Calendar,
-  Tag
+  Tag,
+  History
 } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
@@ -81,6 +82,9 @@ export default function AllTasksV2Page() {
     seq: number;
     taskType: 'official' | 'personal';
     taskName: string;
+    originalPersonalName?: string;
+    revisionCount?: number;
+    revisionHistory?: any[];
     assignedDate?: string;
     dueDate?: string;
     date?: string;
@@ -444,6 +448,7 @@ export default function AllTasksV2Page() {
     const mappedStatus = mappedTeacherColStatus.get(col.id);
     const isMapped = mappedStatus !== undefined;
     const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+    const associatedTask = childTasks.find(t => t.teacher_column_id === col.id);
 
     let cardBg = "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
     const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
@@ -479,6 +484,14 @@ export default function AllTasksV2Page() {
             seq,
             taskType: 'official',
             taskName: col.column_name,
+            originalPersonalName: associatedTask?.original_personal_name,
+            revisionCount: associatedTask?.revision_count,
+            revisionHistory: associatedTask?.revision_history,
+            assignedDate: associatedTask?.assigned_date || associatedTask?.date,
+            dueDate: associatedTask?.due_date,
+            date: associatedTask?.date,
+            note: associatedTask?.note,
+            tags: associatedTask?.tags,
             status: statusKey,
             statusText
           });
@@ -549,6 +562,9 @@ export default function AllTasksV2Page() {
             seq,
             taskType: 'personal',
             taskName: task.task_name,
+            originalPersonalName: task.original_personal_name,
+            revisionCount: task.revision_count,
+            revisionHistory: task.revision_history,
             assignedDate: task.assigned_date || task.date,
             dueDate: task.due_date,
             date: task.date,
@@ -1147,7 +1163,26 @@ export default function AllTasksV2Page() {
                   {selectedTaskModal.taskType === 'official' ? 'ชื่องานที่ครูสั่ง' : 'ชื่องาน / รายละเอียด'}
                 </p>
                 <p className="text-sm font-bold text-gray-900">{selectedTaskModal.taskName}</p>
+                {selectedTaskModal.originalPersonalName && selectedTaskModal.originalPersonalName !== selectedTaskModal.taskName && (
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-gray-400">ร่างเดิม:</span>
+                    <span className="text-xs font-medium text-gray-700 bg-white px-2 py-0.5 rounded-md border border-[#cbd3e0]">
+                      {selectedTaskModal.originalPersonalName}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {selectedTaskModal.revisionCount && selectedTaskModal.revisionCount > 1 && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
+                    <History className="w-3.5 h-3.5 text-gray-500" /> รอบการทำ / แก้ไข
+                  </p>
+                  <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-md border border-amber-200 inline-block">
+                    รอบที่ {selectedTaskModal.revisionCount}
+                  </span>
+                </div>
+              )}
 
               {selectedTaskModal.assignedDate && (
                 <div>
@@ -1197,6 +1232,24 @@ export default function AllTasksV2Page() {
                   <p className="text-xs font-medium text-gray-700 bg-white p-2 rounded-xl border border-[#e2e8f0]">
                     {selectedTaskModal.note}
                   </p>
+                </div>
+              )}
+
+              {selectedTaskModal.revisionHistory && selectedTaskModal.revisionHistory.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                    <History className="w-3.5 h-3.5 text-gray-500" /> ประวัติการทำงาน (Timeline)
+                  </p>
+                  <div className="bg-white rounded-xl p-2.5 border border-[#e2e8f0] space-y-1.5 max-h-36 overflow-y-auto">
+                    {selectedTaskModal.revisionHistory.map((item, idx) => (
+                      <div key={idx} className="text-[11px] flex items-start justify-between gap-2 border-b border-gray-50 pb-1 last:border-0 last:pb-0">
+                        <span className="text-gray-700 font-medium">{item.note || item.action}</span>
+                        <span className="text-[10px] text-gray-400 shrink-0 font-mono">
+                          {new Date(item.timestamp).toLocaleDateString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

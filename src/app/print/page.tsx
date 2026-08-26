@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Printer, CalendarClock, CheckCircle, Zap, Clock, BookOpen, Sparkles, FileText } from 'lucide-react';
+import { Printer, CalendarClock, CheckCircle, Zap, Clock } from 'lucide-react';
 
 export default function PrintHubPage() {
   return (
@@ -13,7 +13,7 @@ export default function PrintHubPage() {
             พิมพ์ใบงาน (Print Hub)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            เลือกรูปแบบใบงานที่ต้องการพิมพ์ เพื่อนำไปตรวจเช็คด้วยมือ (Manual Check) หรือให้ลูกนำไปติดตามงานกับครูที่โรงเรียน
+            เลือกรูปแบบงานที่ต้องการพิมพ์ เพื่อนำไปตรวจเช็คด้วยมือ (Manual Check) หรือให้ลูกนำไปติดตามงานกับครูที่โรงเรียน
           </p>
         </div>
       </div>
@@ -21,7 +21,7 @@ export default function PrintHubPage() {
       {/* 4 Print Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         
-        {/* Card 1: ใบตามงานจากครู (สำหรับถือไปโรงเรียน) */}
+        {/* Card 1: ตามงาน */}
         <Link 
           href="/print/pending" 
           className="group text-left bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 rounded-3xl p-6 text-white shadow-md hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden flex flex-col h-full cursor-pointer"
@@ -31,29 +31,26 @@ export default function PrintHubPage() {
           </div>
           
           <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner group-hover:scale-105 transition-transform">
                 <CalendarClock className="w-6 h-6 text-white" />
               </div>
-              <span className="text-[10px] font-extrabold bg-blue-500/30 text-blue-200 border border-blue-400/40 px-2.5 py-1 rounded-full backdrop-blur-sm">
-                🎒 ถือไปโรงเรียน
-              </span>
             </div>
 
             <h2 className="text-xl font-black mb-2 tracking-tight group-hover:text-blue-200 transition-colors">
-              ใบตามงานจากครู
+              ตามงาน
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed mb-6 flex-grow">
-              รวบรวมงานทั้งหมดที่ครูสั่งแต่ยังไม่ได้ตรวจใน Google Sheet เพื่อให้เด็กนำไปบอกครูที่โรงเรียนเพื่อขอเคลียร์งาน
+              รวบรวมงานทั้งหมดที่ครูสั่งแต่ยังไม่ได้ตรวจใน Google Sheet พร้อมระบุสถานะการส่ง เพื่อให้เด็กถือไปเช็คและตามงานที่โรงเรียน
             </p>
 
             <div className="inline-flex items-center justify-center text-xs font-bold bg-white text-slate-800 px-4 py-2.5 rounded-xl shadow-sm group-hover:bg-blue-50 group-hover:text-blue-700 transition-all mt-auto w-max active:scale-95">
-              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์ใบตามงานจากครู
+              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์ตามงาน
             </div>
           </div>
         </Link>
 
-        {/* Card 2: ใบงานที่ยังไม่ทำ (สำหรับ Manual Check ที่บ้าน) */}
+        {/* Card 2: งานที่ยังไม่ทำ */}
         <Link 
           href="/print/in-progress" 
           className="group text-left bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-6 text-white shadow-md hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden flex flex-col h-full cursor-pointer"
@@ -63,29 +60,26 @@ export default function PrintHubPage() {
           </div>
 
           <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner group-hover:scale-105 transition-transform">
                 <Zap className="w-6 h-6 text-white" />
               </div>
-              <span className="text-[10px] font-extrabold bg-white/20 text-amber-100 border border-white/30 px-2.5 py-1 rounded-full backdrop-blur-sm">
-                ✏️ ติ๊กเช็คที่บ้าน
-              </span>
             </div>
 
             <h2 className="text-xl font-black mb-2 tracking-tight group-hover:text-amber-100 transition-colors">
-              ใบงานที่ยังไม่ทำ
+              งานที่ยังไม่ทำ
             </h2>
             <p className="text-amber-100 text-xs sm:text-sm leading-relaxed mb-6 flex-grow">
-              พิมพ์รายการงานที่กำลังทำและยังไม่ได้ทำ สำหรับวางบนโต๊ะทำการบ้าน เพื่อให้ลูกและผู้ปกครองใช้ดินสอ/ปากกาติ๊กเช็คทีละข้อ
+              พิมพ์รายการงานและงานส่วนตัวที่ยังไม่ทำ สำหรับวางบนโต๊ะทำการบ้าน ให้ลูกใช้ดินสอติ๊กทำทีละข้อ พร้อมป้ายเตือนงานที่ต้องแก้
             </p>
 
             <div className="inline-flex items-center justify-center text-xs font-bold bg-white text-orange-700 px-4 py-2.5 rounded-xl shadow-sm group-hover:bg-amber-50 group-hover:text-orange-800 transition-all mt-auto w-max active:scale-95">
-              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์ใบงานที่ยังไม่ทำ
+              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์งานที่ยังไม่ทำ
             </div>
           </div>
         </Link>
 
-        {/* Card 3: ใบงานรอส่ง (สำหรับตรวจกระเป๋านักเรียน) */}
+        {/* Card 3: งานรอส่ง */}
         <Link 
           href="/print/done" 
           className="group text-left bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 rounded-3xl p-6 text-white shadow-md hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden flex flex-col h-full cursor-pointer"
@@ -95,29 +89,26 @@ export default function PrintHubPage() {
           </div>
 
           <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner group-hover:scale-105 transition-transform">
                 <CheckCircle className="w-6 h-6 text-white" />
               </div>
-              <span className="text-[10px] font-extrabold bg-white/20 text-blue-100 border border-white/30 px-2.5 py-1 rounded-full backdrop-blur-sm">
-                📦 เช็คใส่กระเป๋า
-              </span>
             </div>
 
             <h2 className="text-xl font-black mb-2 tracking-tight group-hover:text-blue-100 transition-colors">
-              ใบงานรอส่ง
+              งานรอส่ง
             </h2>
             <p className="text-blue-100 text-xs sm:text-sm leading-relaxed mb-6 flex-grow">
-              พิมพ์รายการงานที่เด็กทำเสร็จแล้ว เพื่อให้ผู้ปกครองตรวจสอบความเรียบร้อยและจัดใส่กระเป๋าเตรียมนำไปส่งครู
+              พิมพ์รายการงานที่ทำเสร็จแล้ว ให้ลูกพกติดตัวไปโรงเรียน เพื่อตรวจเช็คด้วยตนเองว่าต้องนำการบ้านวิชาไหนไปส่งครูบ้าง
             </p>
 
             <div className="inline-flex items-center justify-center text-xs font-bold bg-white text-blue-700 px-4 py-2.5 rounded-xl shadow-sm group-hover:bg-blue-50 transition-all mt-auto w-max active:scale-95">
-              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์ใบงานรอส่ง
+              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์งานรอส่ง
             </div>
           </div>
         </Link>
 
-        {/* Card 4: ใบงานรอครูอัปเดตชีต (สำหรับตามเช็คคะแนน) */}
+        {/* Card 4: งานรอครูอัปเดต */}
         <Link 
           href="/print/submitted" 
           className="group text-left bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 rounded-3xl p-6 text-white shadow-md hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden flex flex-col h-full cursor-pointer"
@@ -127,24 +118,21 @@ export default function PrintHubPage() {
           </div>
 
           <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner group-hover:scale-105 transition-transform">
                 <Clock className="w-6 h-6 text-white" />
               </div>
-              <span className="text-[10px] font-extrabold bg-white/20 text-emerald-100 border border-white/30 px-2.5 py-1 rounded-full backdrop-blur-sm">
-                📊 เช็คคะแนนในชีต
-              </span>
             </div>
 
             <h2 className="text-xl font-black mb-2 tracking-tight group-hover:text-emerald-100 transition-colors">
-              ใบงานรอครูอัปเดต
+              งานรอครูอัปเดต
             </h2>
             <p className="text-emerald-100 text-xs sm:text-sm leading-relaxed mb-6 flex-grow">
-              พิมพ์รายการงานที่ส่งให้ครูแล้ว เพื่อใช้ตรวจสอบเมื่อครูทยอยลงคะแนนตรวจใน Google Sheet
+              พิมพ์รายการงานที่ส่งครูไปแล้ว เพื่อใช้ตรวจสอบเมื่อครูทยอยลงคะแนนตรวจใน Google Sheet
             </p>
 
             <div className="inline-flex items-center justify-center text-xs font-bold bg-white text-emerald-700 px-4 py-2.5 rounded-xl shadow-sm group-hover:bg-emerald-50 transition-all mt-auto w-max active:scale-95">
-              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์ใบงานรออัปเดต
+              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์งานรอครูอัปเดต
             </div>
           </div>
         </Link>

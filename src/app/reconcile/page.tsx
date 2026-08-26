@@ -26,7 +26,8 @@ import {
   CheckSquare,
   FileText,
   Calendar,
-  Send
+  Send,
+  History
 } from 'lucide-react';
 import { 
   ChildTask, 
@@ -63,6 +64,7 @@ export default function TaskHubPage() {
   // Filter & Search state
   const [filterSubject, setFilterSubject] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [teacherColFilter, setTeacherColFilter] = useState<'pending' | 'checked'>('pending');
 
   // Link Modal State: Anchor is Teacher Column!
   const [selectedTeacherColToLink, setSelectedTeacherColToLink] = useState<TeacherColumn | null>(null);
@@ -165,7 +167,7 @@ export default function TaskHubPage() {
     return Array.from(subjects).sort();
   }, [teacherCols, childTasks]);
 
-  // STRICTLY Personal Tasks ONLY
+  // All Personal Tasks
   const allPersonalTasks = useMemo(() => {
     return childTasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id));
   }, [childTasks]);
@@ -173,26 +175,49 @@ export default function TaskHubPage() {
   // Map of teacher column ID -> Linked Personal Task
   const teacherColToPersonalTaskMap = useMemo(() => {
     const map = new Map<string, ChildTask>();
-    allPersonalTasks.forEach(task => {
-      if (task.teacher_column_id) {
+    childTasks.forEach(task => {
+      if (task.teacher_column_id && (task.original_personal_name || task.task_type === 'personal')) {
         map.set(task.teacher_column_id, task);
       }
     });
     return map;
-  }, [allPersonalTasks]);
+  }, [childTasks]);
 
-  // Left Side: Pending/Unfinished Teacher Tasks ONLY (ตัดงานที่ครูตรวจแล้วออก)
-  const pendingTeacherCols = useMemo(() => {
+  // Pending vs Checked Teacher Columns Count
+  const pendingTeacherCount = useMemo(() => {
     return teacherCols.filter(col => {
       if (col.is_checked) return false;
       if (filterSubject !== 'All' && col.subject !== filterSubject) return false;
-      if (searchQuery.trim() && !col.column_name.toLowerCase().includes(searchQuery.toLowerCase()) && !col.subject.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    }).length;
+  }, [teacherCols, filterSubject]);
+
+  const checkedTeacherCount = useMemo(() => {
+    return teacherCols.filter(col => {
+      if (!col.is_checked) return false;
+      if (filterSubject !== 'All' && col.subject !== filterSubject) return false;
+      return true;
+    }).length;
+  }, [teacherCols, filterSubject]);
+
+  // Left Side: Displayed Teacher Columns (Filterable by pending / checked)
+  const displayedTeacherCols = useMemo(() => {
+    return teacherCols.filter(col => {
+      if (teacherColFilter === 'pending' && col.is_checked) return false;
+      if (teacherColFilter === 'checked' && !col.is_checked) return false;
+      if (filterSubject !== 'All' && col.subject !== filterSubject) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = col.column_name.toLowerCase().includes(q);
+        const matchSubject = col.subject.toLowerCase().includes(q);
+        if (!matchName && !matchSubject) return false;
+      }
       return true;
     }).sort((a, b) => {
       if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
       return (a.sequence || 0) - (b.sequence || 0);
     });
-  }, [teacherCols, filterSubject, searchQuery]);
+  }, [teacherCols, filterSubject, searchQuery, teacherColFilter]);
 
   // Right Side: Filtered Personal Tasks
   const filteredPersonalTasks = useMemo(() => {
@@ -237,7 +262,7 @@ export default function TaskHubPage() {
     setTargetPersonalTaskId(suggested ? suggested.id! : '');
   };
 
-  // Confirm Link (Teacher Column is MASTER -> Personal Note is linked as secondary source)
+  // Confirm Link (Unified Merge: Teacher Column is MASTER A -> Personal Task is working draft a with revision history)
   const handleConfirmLink = async () => {
     if (!selectedTeacherColToLink || !targetPersonalTaskId || !studentName) return;
 
@@ -245,39 +270,70 @@ export default function TaskHubPage() {
     if (!personalNote) return;
 
     try {
-      let officialStatus: TaskStatus = 'Submitted';
-      if (personalNote.status === 'Todo' || personalNote.status === 'Rework') {
-        officialStatus = 'Todo';
+      // 1. Determine final status
+      let finalStatus: TaskStatus = 'Submitted';
+      if (selectedTeacherColToLink.is_checked) {
+        finalStatus = 'Verified';
+      } else if (personalNote.status === 'Todo' || personalNote.status === 'Rework') {
+        finalStatus = personalNote.status;
+      } else if (personalNote.status === 'Verified' || personalNote.status === 'Done') {
+        finalStatus = 'Submitted';
       } else {
-        officialStatus = 'Submitted';
+        finalStatus = personalNote.status;
       }
 
-      let officialTask = childTasks.find(t => t.teacher_column_id === selectedTeacherColToLink.id && t.task_type === 'official');
-      if (officialTask && officialTask.id) {
-        await updateChildTask(officialTask.id, {
-          task_name: selectedTeacherColToLink.column_name,
-          subject: selectedTeacherColToLink.subject,
-          status: officialStatus,
-          note: personalNote.note || ''
-        });
-      } else {
-        await addChildTask({
-          student_name: studentName,
-          subject: selectedTeacherColToLink.subject,
-          task_name: selectedTeacherColToLink.column_name,
-          teacher_column_id: selectedTeacherColToLink.id,
-          task_type: 'official',
-          status: officialStatus,
-          date: new Date().toISOString().split('T')[0],
-          note: personalNote.note || ''
+      // 2. Revision counter & history logs
+      const currentRev = personalNote.revision_count || 1;
+      const history = [...(personalNote.revision_history || [])];
+
+      if (history.length === 0) {
+        history.push({
+          revision: currentRev,
+          action: 'created',
+          note: `สร้างงานร่างเดิม: ${personalNote.task_name}`,
+          timestamp: (personalNote.created_at as any)?.toMillis?.() || Date.now()
         });
       }
 
-      await updateChildTask(personalNote.id!, {
-        teacher_column_id: selectedTeacherColToLink.id,
-        task_type: 'personal',
-        status: 'Verified'
+      history.push({
+        revision: currentRev,
+        action: 'teacher_linked',
+        note: `ผูกเข้ากับงานชีตครู: ${selectedTeacherColToLink.column_name}`,
+        timestamp: Date.now()
       });
+
+      if (selectedTeacherColToLink.is_checked) {
+        history.push({
+          revision: currentRev,
+          action: 'verified',
+          note: 'ครูตรวจผ่านในชีตเรียบร้อยแล้ว (สมบูรณ์)',
+          timestamp: Date.now()
+        });
+      }
+
+      // 3. Keep original draft name
+      const originalDraftName = personalNote.original_personal_name || personalNote.task_name;
+
+      // 4. Update personal task to become the unified official master
+      await updateChildTask(personalNote.id!, {
+        task_name: selectedTeacherColToLink.column_name,
+        original_personal_name: originalDraftName,
+        teacher_column_id: selectedTeacherColToLink.id,
+        task_type: 'official',
+        status: finalStatus,
+        revision_count: currentRev,
+        revision_history: history
+      });
+
+      // 5. Clean up any hollow placeholder official tasks to avoid duplicate rows
+      const hollowOfficialTasks = childTasks.filter(
+        t => t.teacher_column_id === selectedTeacherColToLink.id && t.id !== personalNote.id
+      );
+      for (const hollow of hollowOfficialTasks) {
+        if (hollow.id) {
+          await deleteChildTask(hollow.id);
+        }
+      }
 
       await loadData(studentName);
 
@@ -298,23 +354,42 @@ export default function TaskHubPage() {
   // Unlink Action
   const handleUnlink = async (personalTask: ChildTask) => {
     if (!personalTask.id || !personalTask.teacher_column_id || !studentName) return;
-    if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับงานส่วนตัว "${personalTask.task_name}" ใช่หรือไม่?`)) return;
+    const taskTitle = personalTask.original_personal_name || personalTask.task_name;
+    if (!confirm(`คุณต้องการยกเลิกการเชื่อมโยงกับงานส่วนตัว "${taskTitle}" ใช่หรือไม่?`)) return;
 
     try {
       const teacherColId = personalTask.teacher_column_id;
+      const history = [...(personalTask.revision_history || [])];
+      history.push({
+        revision: personalTask.revision_count || 1,
+        action: 'parent_reviewed',
+        note: 'ยกเลิกการเชื่อมโยงกับชีตครู (กลับเป็นงานส่วนตัวอิสระ)',
+        timestamp: Date.now()
+      });
 
-      const officialTask = childTasks.find(t => t.teacher_column_id === teacherColId && t.task_type === 'official');
-      if (officialTask && officialTask.id) {
-        await updateChildTask(officialTask.id, {
-          status: 'Todo'
-        });
-      }
-
+      // Revert personal task back to personal draft
       await updateChildTask(personalTask.id, {
+        task_name: personalTask.original_personal_name || personalTask.task_name,
+        original_personal_name: undefined,
         teacher_column_id: null,
         task_type: 'personal',
-        status: 'Verified'
+        status: 'Done',
+        revision_history: history
       });
+
+      // Re-create official task placeholder if teacher column still exists in sheet
+      const targetCol = teacherCols.find(c => c.id === teacherColId);
+      if (targetCol) {
+        await addChildTask({
+          student_name: studentName,
+          subject: targetCol.subject,
+          task_name: targetCol.column_name,
+          teacher_column_id: targetCol.id,
+          task_type: 'official',
+          status: targetCol.is_checked ? 'Verified' : 'Todo',
+          date: new Date().toISOString().split('T')[0]
+        });
+      }
 
       await loadData(studentName);
     } catch (error) {
@@ -417,7 +492,7 @@ export default function TaskHubPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500 font-medium">งานครูที่รอตรวจ/ค้าง</p>
-            <p className="text-xl font-black text-amber-600">{pendingTeacherCols.length} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
+            <p className="text-xl font-black text-amber-600">{pendingTeacherCount} <span className="text-xs text-gray-400 font-normal">ชิ้น</span></p>
           </div>
         </div>
 
@@ -496,31 +571,73 @@ export default function TaskHubPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           {/* ======================================================== */}
-          {/* LEFT SIDE: งานจากชีตครูที่ยังไม่เสร็จ (ตัวตั้งในการผูกงาน) */}
+          {/* LEFT SIDE: งานตามชีตครู (ตัวตั้งในการผูกงาน)              */}
           {/* ======================================================== */}
           <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-sm flex flex-col h-full">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-4 border-b border-[#e2e8f0] gap-3">
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center font-bold text-sm">
                   <CheckSquare className="w-4 h-4 text-[#597ecf]" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">งานครูที่ยังไม่เสร็จ (ตัวตั้ง)</h2>
-                  <p className="text-xs sm:text-sm text-gray-500">เฉพาะงานที่ครูยังไม่ติ๊กตรวจใน Google Sheet</p>
+                  <h2 className="text-lg font-bold text-gray-900">งานตามชีตครู</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">
+                    {teacherColFilter === 'pending' ? 'งานที่ครูยังไม่ติ๊กตรวจในชีต' : 'งานที่ครูตรวจจบงานแล้วในชีต'}
+                  </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/30 px-2.5 py-1 rounded-full">
-                {pendingTeacherCols.length} รายการ
-              </span>
+
+              {/* Segmented Switcher for Teacher Columns */}
+              <div className="flex items-center bg-[#eff2f7] p-1 rounded-xl border border-[#cbd3e0] self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setTeacherColFilter('pending')}
+                  className={clsx(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    teacherColFilter === 'pending'
+                      ? "bg-white text-[#597ecf] shadow-xs"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <span>ยังไม่เสร็จ</span>
+                  <span className={clsx(
+                    "px-1.5 py-0.2 rounded-full text-[10px] font-extrabold",
+                    teacherColFilter === 'pending' ? "bg-[#eef3fc] text-[#597ecf]" : "bg-gray-200 text-gray-600"
+                  )}>
+                    {pendingTeacherCount}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTeacherColFilter('checked')}
+                  className={clsx(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    teacherColFilter === 'checked'
+                      ? "bg-white text-emerald-700 shadow-xs"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <span>ตรวจจบแล้ว</span>
+                  <span className={clsx(
+                    "px-1.5 py-0.2 rounded-full text-[10px] font-extrabold",
+                    teacherColFilter === 'checked' ? "bg-emerald-100 text-emerald-800" : "bg-gray-200 text-gray-600"
+                  )}>
+                    {checkedTeacherCount}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3 flex-1 overflow-y-auto max-h-[650px] pr-1">
-              {pendingTeacherCols.length === 0 ? (
+              {displayedTeacherCols.length === 0 ? (
                 <div className="text-center py-12 bg-[#f4f7fa] rounded-2xl border border-dashed border-[#e2e8f0] text-gray-400 text-sm">
-                  ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้
+                  {teacherColFilter === 'pending' 
+                    ? 'ยอดเยี่ยมมาก! ไม่มีงานค้างจากชีตครูในหมวดนี้' 
+                    : 'ยังไม่มีงานที่ครูตรวจจบงานแล้วในหมวดนี้'}
                 </div>
               ) : (
-                pendingTeacherCols.map(col => {
+                displayedTeacherCols.map(col => {
                   const linkedPersonalTask = teacherColToPersonalTaskMap.get(col.id);
 
                   return (
@@ -528,14 +645,25 @@ export default function TaskHubPage() {
                       key={col.id}
                       className={clsx(
                         "p-4 rounded-2xl border transition-all duration-200",
-                        linkedPersonalTask ? "bg-emerald-50/40 border-emerald-200" : "bg-[#f8fafc] border-[#e2e8f0] hover:bg-white hover:shadow-xs"
+                        linkedPersonalTask 
+                          ? "bg-emerald-50/40 border-emerald-200" 
+                          : col.is_checked 
+                            ? "bg-emerald-50/20 border-emerald-100 hover:bg-white hover:shadow-xs" 
+                            : "bg-[#f8fafc] border-[#e2e8f0] hover:bg-white hover:shadow-xs"
                       )}
                     >
                       {/* Top Badges */}
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/20">
-                          {col.subject}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg text-[#597ecf] bg-[#eef3fc] border border-[#597ecf]/20">
+                            {col.subject}
+                          </span>
+                          {col.is_checked && (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> ครูตรวจแล้ว
+                            </span>
+                          )}
+                        </div>
 
                         <div className="flex items-center gap-1.5">
                           {typeof col.sequence === 'number' && (
@@ -567,7 +695,7 @@ export default function TaskHubPage() {
                           <div className="flex items-center justify-between w-full bg-emerald-100/60 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-semibold">
                             <div className="flex items-center gap-1.5 truncate mr-2">
                               <Link2 className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
-                              <span className="truncate">ผูกกับงานส่วนตัว: <strong>{linkedPersonalTask.task_name}</strong></span>
+                              <span className="truncate">ผูกกับงานส่วนตัว: <strong>{linkedPersonalTask.original_personal_name || linkedPersonalTask.task_name}</strong></span>
                             </div>
                             <button
                               onClick={() => handleUnlink(linkedPersonalTask)}
@@ -653,6 +781,12 @@ export default function TaskHubPage() {
                             </span>
                           )}
 
+                          {task.revision_count && task.revision_count > 1 && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                              <History className="w-2.5 h-2.5" /> รอบที่ {task.revision_count}
+                            </span>
+                          )}
+
                           {task.tags?.includes('งานในคาบ') && (
                             <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
                               <GraduationCap className="w-3 h-3" /> งานในคาบ
@@ -668,9 +802,9 @@ export default function TaskHubPage() {
                         {/* Status Badge */}
                         <span className={clsx(
                           "text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs flex items-center gap-1",
-                          task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : "bg-gray-100 text-gray-700"
+                          task.status === 'Verified' ? "bg-emerald-100 text-emerald-800 font-extrabold" : task.status === 'Done' ? "bg-[#eef3fc] text-[#597ecf]" : task.status === 'Submitted' ? "bg-sky-100 text-sky-800" : task.status === 'Rework' ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-gray-100 text-gray-700"
                         )}>
-                          {task.status === 'Verified' ? <><CheckCircle2 className="w-3 h-3" /> ตรวจเสร็จแล้ว</> : task.status === 'Done' ? <><CheckCircle className="w-3 h-3" /> ทำเสร็จ-รอส่ง</> : task.status === 'Submitted' ? <><Send className="w-3 h-3" /> ส่งแล้ว-รออัปเดต</> : <><FileText className="w-3 h-3" /> ยังไม่ทำ</>}
+                          {task.status === 'Verified' ? <><CheckCircle2 className="w-3 h-3" /> ตรวจเสร็จแล้ว</> : task.status === 'Done' ? <><CheckCircle className="w-3 h-3" /> ทำเสร็จ-รอส่ง</> : task.status === 'Submitted' ? <><Send className="w-3 h-3" /> ส่งแล้ว-รออัปเดต</> : task.status === 'Rework' ? <><History className="w-3 h-3 text-amber-700" /> ต้องแก้ไข</> : <><FileText className="w-3 h-3" /> ยังไม่ทำ</>}
                         </span>
                       </div>
 
@@ -778,6 +912,13 @@ export default function TaskHubPage() {
                               </span>
                             )}
                           </div>
+
+                          {task.original_personal_name && task.original_personal_name !== task.task_name && (
+                            <div className="text-[11px] text-[#57627a] bg-[#eff2f7] px-2 py-0.5 rounded-md border border-[#cbd3e0] inline-flex items-center gap-1 max-w-full">
+                              <span className="font-bold text-gray-400">ร่างเดิม:</span>
+                              <span className="truncate font-medium">{task.original_personal_name}</span>
+                            </div>
+                          )}
 
                           {isLinked && linkedCol && (
                             <div className="text-[11px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1.5 max-w-full">
