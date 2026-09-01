@@ -8,7 +8,21 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 
-const DEFAULT_SUBJECTS = ['ภาษาไทย', 'คณิตศาสตร์', 'วิทยาศาสตร์', 'ภาษาอังกฤษ', 'สังคมฯ', 'ประวัติศาสตร์', 'สุขศึกษา', 'ศิลปะ', 'การงานอาชีพ', 'อื่นๆ'];
+// Fallback teacher subjects (aligned with official teacher columns)
+const FALLBACK_TEACHER_SUBJECTS = [
+  'การงานอาชีพ',
+  'คณิตศาสตร์+เพิ่มเติม',
+  'ทักษะภาษาจีน',
+  'ประวัติศาสตร์',
+  'ภาษาอังกฤษ',
+  'ภาษาไทย',
+  'วิทยาศาสตร์',
+  'ศิลปะ',
+  'สังคมฯ',
+  'สุขศึกษา',
+  'เทคโนโลยี(วิทยาการคำนวณ)',
+  'โครงงานบูรณาการ'
+];
 
 function HomeworkDashboard() {
   const searchParams = useSearchParams();
@@ -24,7 +38,7 @@ function HomeworkDashboard() {
   // Form state
   const [isAdding, setIsAdding] = useState(false);
   const [newTaskName, setNewTaskName] = useState('');
-  const [newSubject, setNewSubject] = useState(DEFAULT_SUBJECTS[0]);
+  const [newSubject, setNewSubject] = useState(FALLBACK_TEACHER_SUBJECTS[0]);
   const [customSubject, setCustomSubject] = useState('');
   const [newAssignedDate, setNewAssignedDate] = useState(new Date().toISOString().split('T')[0]);
   const [newDueDate, setNewDueDate] = useState('');
@@ -36,14 +50,45 @@ function HomeworkDashboard() {
   const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
   const [filterType, setFilterType] = useState<'official' | 'personal'>(defaultType);
 
-  const availableSubjects = useMemo(() => {
+  // รายชื่อวิชาของครู (ดึงจาก TeacherColumn และ ChildTask สาย official)
+  const teacherSubjects = useMemo(() => {
     const subjects = new Set<string>();
-    DEFAULT_SUBJECTS.forEach(s => subjects.add(s));
-    tasks.forEach(t => {
-      if (t.subject) subjects.add(t.subject);
+    teacherCols.forEach(c => {
+      if (c.subject && typeof c.subject === 'string' && c.subject.trim()) {
+        subjects.add(c.subject.trim());
+      }
     });
-    return Array.from(subjects);
-  }, [tasks]);
+    tasks.forEach(t => {
+      if ((t.task_type === 'official' || !!t.teacher_column_id) && t.subject && typeof t.subject === 'string' && t.subject.trim()) {
+        subjects.add(t.subject.trim());
+      }
+    });
+
+    if (subjects.size === 0) {
+      return [...FALLBACK_TEACHER_SUBJECTS].sort((a, b) => a.localeCompare(b, 'th'));
+    }
+
+    return Array.from(subjects).sort((a, b) => a.localeCompare(b, 'th'));
+  }, [teacherCols, tasks]);
+
+  // รายชื่อวิชาสำหรับเพิ่มงานส่วนตัว (ตรงกับวิชาของครู + รายวิชาที่เคยใช้ + 'อื่นๆ' ไว้ท้ายสุด)
+  const availableSubjects = useMemo(() => {
+    const subjects = new Set<string>(teacherSubjects);
+    tasks.forEach(t => {
+      if (t.subject && typeof t.subject === 'string' && t.subject.trim() && t.subject !== 'อื่นๆ' && t.subject !== 'คณิตศาสตร์') {
+        subjects.add(t.subject.trim());
+      }
+    });
+    const sorted = Array.from(subjects).sort((a, b) => a.localeCompare(b, 'th'));
+    return [...sorted, 'อื่นๆ'];
+  }, [teacherSubjects, tasks]);
+
+  // ซิงค์ newSubject ให้อยู่ใน availableSubjects เสมอ
+  useEffect(() => {
+    if (availableSubjects.length > 0 && !availableSubjects.includes(newSubject)) {
+      setNewSubject(availableSubjects[0]);
+    }
+  }, [availableSubjects, newSubject]);
 
   useEffect(() => {
     const urlSubject = searchParams.get('subject');
@@ -139,6 +184,10 @@ function HomeworkDashboard() {
   };
 
   const handleToggleAdding = () => {
+    if (!isAdding && filterSubject !== 'All' && availableSubjects.includes(filterSubject)) {
+      setNewSubject(filterSubject);
+      setCustomSubject('');
+    }
     setIsAdding(!isAdding);
   };
 
@@ -196,6 +245,7 @@ function HomeworkDashboard() {
       setNewTaskName('');
       setNewDueDate('');
       setNewNote('');
+      setCustomSubject('');
       setIsAdding(false);
     } catch (error) {
       console.error('Error adding task:', error);
@@ -324,19 +374,17 @@ function HomeworkDashboard() {
   };
 
   const uniqueSubjects = useMemo(() => {
-    const relevantTasks = tasks.filter(t => 
-      filterType === 'official' 
-        ? (t.task_type === 'official' || !!t.teacher_column_id)
-        : (t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id))
-    );
+    if (filterType === 'official') {
+      return teacherSubjects;
+    }
     const subjects = new Set<string>();
-    relevantTasks.forEach(t => {
+    tasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id)).forEach(t => {
       if (t.subject && typeof t.subject === 'string' && t.subject.trim()) {
         subjects.add(t.subject.trim());
       }
     });
-    return Array.from(subjects).sort();
-  }, [tasks, filterType]);
+    return Array.from(subjects).sort((a, b) => a.localeCompare(b, 'th'));
+  }, [tasks, filterType, teacherSubjects]);
 
   // Safety synchronization: if current filterSubject is not in uniqueSubjects, reset to 'All'
   useEffect(() => {
@@ -347,16 +395,15 @@ function HomeworkDashboard() {
 
   const handleFilterTypeChange = (newType: 'official' | 'personal') => {
     setFilterType(newType);
-    const newRelevantTasks = tasks.filter(t => 
-      newType === 'official' 
-        ? (t.task_type === 'official' || !!t.teacher_column_id)
-        : (t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id))
-    );
-    const newSubjects = new Set<string>();
-    newRelevantTasks.forEach(t => {
-      if (t.subject && t.subject.trim()) newSubjects.add(t.subject.trim());
-    });
-    if (filterSubject !== 'All' && !newSubjects.has(filterSubject)) {
+    const validSubjects = newType === 'official' 
+      ? new Set<string>(teacherSubjects)
+      : new Set<string>(
+          tasks
+            .filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id))
+            .map(t => t.subject?.trim())
+            .filter(Boolean) as string[]
+        );
+    if (filterSubject !== 'All' && !validSubjects.has(filterSubject)) {
       setFilterSubject('All');
     }
   };
@@ -735,7 +782,7 @@ function HomeworkDashboard() {
             </button>
           ) : (
             <button
-              onClick={() => setIsAdding(true)}
+              onClick={handleToggleAdding}
               className="inline-flex items-center bg-[#57627a] hover:bg-[#434c60] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4 mr-2" />
