@@ -57,6 +57,7 @@ export default function AllTasksV2Page() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
+  const [syncWarnings, setSyncWarnings] = useState<{ url: string; error: string }[]>([]);
   
   // 2-Mode Segmented Control: 'official' (งานตามชีตครู) vs 'personal' (งานส่วนตัว)
   const [filterType, setFilterType] = useState<'official' | 'personal'>('official');
@@ -165,17 +166,25 @@ export default function AllTasksV2Page() {
       return;
     }
     setSyncing(true);
+    setSyncWarnings([]);
     try {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentName, sheetUrls })
       });
+      const data = await res.json().catch(() => null);
       if (res.ok) {
         await loadData(studentName);
+        if (data?.failedSheets?.length > 0) {
+          setSyncWarnings(data.failedSheets);
+        }
+      } else {
+        alert(data?.error || 'เกิดข้อผิดพลาดในการซิงค์ข้อมูล');
       }
     } catch (error) {
       console.error('Sync error:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์');
     } finally {
       setSyncing(false);
     }
@@ -675,6 +684,32 @@ export default function AllTasksV2Page() {
           </button>
         </div>
       </div>
+
+      {/* Sync Warnings: sheets that failed to fetch during last sync */}
+      {syncWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-amber-800">
+              พบปัญหาระหว่างซิงค์ {syncWarnings.length} รายการ (วิชาที่เกี่ยวข้องอาจหายไปหรือไม่อัปเดต)
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-amber-700">
+              {syncWarnings.map((w, i) => (
+                <li key={i} className="break-all">
+                  <span className="font-semibold">{w.error}</span>
+                  <span className="text-amber-500"> — {w.url}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button
+            onClick={() => setSyncWarnings([])}
+            className="text-amber-400 hover:text-amber-700 shrink-0 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 2-Mode Segmented Control Switcher & Summary Stats Toolbar */}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-[#e2e8f0] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">

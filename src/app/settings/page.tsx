@@ -3,11 +3,13 @@
 import { useState, useEffect } from 'react';
 import { Save, UserCircle, RefreshCcw, CheckCircle2, Trash2, AlertTriangle, X, ShieldAlert } from 'lucide-react';
 import { getGlobalSettings, saveGlobalSettings, clearAllChildTasks } from '@/lib/db';
+import { StudentRosterEntry } from '@/lib/googleSheets';
 
 export default function SettingsPage() {
-  const [students, setStudents] = useState<string[]>([]);
+  const [students, setStudents] = useState<StudentRosterEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
+  const [rollNumber, setRollNumber] = useState<string>('');
   const [sheetUrls, setSheetUrls] = useState<string>('');
   const [appPin, setAppPin] = useState<string>('0411');
   const [appPinHint, setAppPinHint] = useState<string>('ค่าเริ่มต้น: 0411');
@@ -36,6 +38,7 @@ export default function SettingsPage() {
       if (res.ok) {
         setStudents(data.students || []);
       } else {
+        setStudents([]);
         setError(data.error || 'Failed to fetch students');
       }
     } catch (err) {
@@ -49,13 +52,15 @@ export default function SettingsPage() {
     const init = async () => {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrls = localStorage.getItem('hw_sheet_urls');
+      let savedRoll = localStorage.getItem('hw_student_roll_number');
       const oldUrl = localStorage.getItem('hw_sheet_url'); // fallback
-      
+
       if (!savedName || (!savedUrls && !oldUrl)) {
         const globalSettings = await getGlobalSettings();
         if (globalSettings) {
           savedName = globalSettings.student_name;
           savedUrls = globalSettings.sheet_urls;
+          savedRoll = globalSettings.student_roll_number || savedRoll;
           if (globalSettings.app_pin) {
             setAppPin(globalSettings.app_pin);
           }
@@ -66,15 +71,17 @@ export default function SettingsPage() {
           localStorage.setItem('hw_sheet_urls', savedUrls);
         }
       } else {
-        // Just fetch the pin if local storage existed
+        // Just fetch the pin/roll number if local storage existed
         const globalSettings = await getGlobalSettings();
         if (globalSettings) {
           if (globalSettings.app_pin) setAppPin(globalSettings.app_pin);
           if (globalSettings.app_pin_hint) setAppPinHint(globalSettings.app_pin_hint);
+          savedRoll = globalSettings.student_roll_number || savedRoll;
         }
       }
-      
+
       if (savedName) setSelectedStudent(savedName);
+      if (savedRoll) setRollNumber(savedRoll);
       
       if (savedUrls) {
         setSheetUrls(savedUrls);
@@ -98,14 +105,16 @@ export default function SettingsPage() {
       return;
     }
     setSaveStatus('saving');
-    
+
     // Save to localStorage
     localStorage.setItem('hw_student_name', selectedStudent);
     localStorage.setItem('hw_sheet_urls', sheetUrls);
-    
+    localStorage.setItem('hw_student_roll_number', rollNumber);
+
     // Save to Firebase globally
     await saveGlobalSettings({
       student_name: selectedStudent,
+      ...(rollNumber ? { student_roll_number: rollNumber } : {}),
       sheet_urls: sheetUrls,
       app_pin: appPin,
       app_pin_hint: appPinHint
@@ -188,18 +197,22 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               รายชื่อนักเรียนจากระบบ (อิงจากลิงก์แรก)
             </label>
-            
+
             <div className="flex space-x-2">
               <div className="relative flex-1">
                 <select
                   className="w-full pl-4 pr-10 py-3 text-base bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#597ecf] focus:border-transparent transition-all appearance-none cursor-pointer"
                   value={selectedStudent}
-                  onChange={(e) => setSelectedStudent(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedStudent(e.target.value);
+                    const matched = students.find(s => s.name === e.target.value);
+                    if (matched?.roll) setRollNumber(matched.roll);
+                  }}
                   disabled={loading || students.length === 0}
                 >
                   <option value="" disabled>-- กรุณาเลือกชื่อนักเรียน --</option>
-                  {students.map((name) => (
-                    <option key={name} value={name}>{name}</option>
+                  {students.map((s) => (
+                    <option key={s.name} value={s.name}>{s.roll ? `เลขที่ ${s.roll} - ${s.name}` : s.name}</option>
                   ))}
                 </select>
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -208,7 +221,7 @@ export default function SettingsPage() {
                   </svg>
                 </div>
               </div>
-              
+
               <button
                 onClick={() => fetchStudents(sheetUrls.split('\n')[0])}
                 disabled={loading || !sheetUrls}
@@ -217,6 +230,24 @@ export default function SettingsPage() {
               >
                 <RefreshCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
               </button>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                เลขที่ (ในห้องเรียน)
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="\d*"
+                value={rollNumber}
+                onChange={(e) => setRollNumber(e.target.value.replace(/\D/g, ''))}
+                placeholder="เช่น 5"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#597ecf] focus:border-transparent outline-none"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                ใช้ตรวจสอบคู่กับชื่อตอนดึงข้อมูลจากครู เผื่อครูสะกดชื่อผิด (เลขที่แม่นยำกว่าเพราะเป็นตัวเลขล้วน) - เลือกชื่อจากรายการด้านบนจะกรอกให้อัตโนมัติ
+              </p>
             </div>
           </div>
 

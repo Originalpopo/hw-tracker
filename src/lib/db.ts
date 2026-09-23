@@ -183,6 +183,7 @@ const GLOBAL_SETTINGS_DOC = "global_settings";
 
 export interface AppSettings {
   student_name: string;
+  student_roll_number?: string; // เลขที่ของนักเรียนในห้อง ใช้ตรวจสอบคู่กับชื่อตอนซิงค์จาก Google Sheet
   sheet_urls: string;
   app_pin?: string;
   app_pin_hint?: string;
