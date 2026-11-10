@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns, TeacherColumn } from '@/lib/db';
 import Link from 'next/link';
+import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { WAIT_ALERT_DAYS, isWaitingForTeacher, waitingDays, waitingSince } from '@/lib/homeworkRules';
 import { ArrowLeft, Printer, Filter } from 'lucide-react';
 
 export default function PrintSubmittedPage() {
@@ -35,14 +37,18 @@ export default function PrintSubmittedPage() {
 
   const loadData = async (name: string) => {
     try {
-      const [allTasks, cols] = await Promise.all([
-        getChildTasks(name),
-        getTeacherColumns(name)
-      ]);
-      // Filter only tasks that are 'Submitted' (ส่งครูแล้ว - รอครูลงคะแนนในชีต)
-      const filteredTasks = allTasks.filter(t => t.status === 'Submitted');
+      // ?demo=1 (เฉพาะตอน dev) = ข้อมูลสมมติ ไม่อ่าน/เขียน Firestore
+      const [allTasks, cols] = isHomeworkDemoUrl()
+        ? (() => { const d = getHomeworkDemo(name); return [d.tasks, d.cols] as const; })()
+        : await Promise.all([
+            getChildTasks(name),
+            getTeacherColumns(name)
+          ]);
+      // งานที่เด็กกด "ทำเสร็จแล้ว" แต่ครูยังไม่ติ๊กในชีต (รอนานสุดอยู่บนสุดของแต่ละวิชา)
+      const uncheckedColIds = new Set(cols.filter(c => !c.is_checked).map(c => c.id));
+      const filteredTasks = allTasks.filter(t => !!t.teacher_column_id && uncheckedColIds.has(t.teacher_column_id) && isWaitingForTeacher(t));
       setSubmittedTasks(filteredTasks);
-      setTeacherCols(cols);
+      setTeacherCols([...cols]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -68,9 +74,7 @@ export default function PrintSubmittedPage() {
       return true;
     }).sort((a, b) => {
       if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
-      const seqA = a.teacher_column_id ? teacherColMap.get(a.teacher_column_id)?.sequence ?? 999 : 999;
-      const seqB = b.teacher_column_id ? teacherColMap.get(b.teacher_column_id)?.sequence ?? 999 : 999;
-      return seqA - seqB;
+      return waitingSince(a) - waitingSince(b);
     });
   }, [submittedTasks, filterSubject, teacherColMap]);
 
@@ -115,7 +119,7 @@ export default function PrintSubmittedPage() {
           }
         }
       `}} />
-      
+
       {/* Non-print controls */}
       <div className="mb-6 print:hidden bg-white p-4 sm:p-5 rounded-2xl border border-[#e2e8f0] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -128,12 +132,12 @@ export default function PrintSubmittedPage() {
             <div className="text-gray-500 text-xs hidden lg:block">
               💡 กดปุ่มพิมพ์ หรือกด <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">Ctrl</kbd> + <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">P</kbd>
             </div>
-            <button 
-              onClick={() => window.print()} 
+            <button
+              onClick={() => window.print()}
               className="flex items-center justify-center bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer active:scale-95 transition-all w-full sm:w-auto"
             >
               <Printer className="w-4 h-4 mr-1.5" />
-              พิมพ์งานรอครูอัปเดต
+              พิมพ์งานรอครูติ๊ก
             </button>
           </div>
         </div>
@@ -141,7 +145,7 @@ export default function PrintSubmittedPage() {
         {/* Filter Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#e2e8f0]">
           <div className="text-xs font-semibold text-gray-600">
-            รายการงานที่ส่งครูแล้ว (รอผลตรวจในชีต): <strong className="text-emerald-800">{displayedTasks.length} รายการ</strong>
+            งานที่ทำเสร็จแล้ว รอครูติ๊กในชีต: <strong className="text-emerald-800">{displayedTasks.length} รายการ</strong>
           </div>
 
           {/* Subject Filter */}
@@ -165,7 +169,7 @@ export default function PrintSubmittedPage() {
       <div className="w-full max-w-[210mm] mx-auto bg-white text-black print:p-0">
         <div className="border-b-2 border-black pb-3 mb-5 text-center">
           <h1 className="text-2xl font-bold tracking-tight">
-            งานรอครูอัปเดต
+            งานรอครูติ๊ก
           </h1>
           <div className="flex justify-between items-center text-xs text-gray-700 mt-1 font-medium px-1">
             <span>นักเรียน: <strong>{studentName}</strong></span>
@@ -207,20 +211,22 @@ export default function PrintSubmittedPage() {
                                 {task.task_name}
                               </span>
 
-                              {/* Original Personal Draft */}
-                              {task.original_personal_name && task.original_personal_name !== task.task_name && (
-                                <div className="text-xs text-gray-600 mt-0.5 font-normal">
-                                  <span>(เดิม: <em>{task.original_personal_name}</em>)</span>
-                                </div>
-                              )}
                             </div>
 
-                            {/* Submitted date if present */}
-                            {(task.date || task.assigned_date) && (
-                              <span className="text-xs font-medium text-gray-600 shrink-0">
-                                ส่งเมื่อ: {task.date || task.assigned_date}
-                              </span>
-                            )}
+                            {/* รอครูติ๊กมากี่วัน (นับจากกด "ทำเสร็จแล้ว") */}
+                            {(() => {
+                              const days = waitingDays(task);
+                              const since = new Date(waitingSince(task)).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+                              return days >= WAIT_ALERT_DAYS ? (
+                                <span className="inline-block border-2 border-black bg-gray-200 font-black text-[11px] px-2 py-0.5 rounded shrink-0">
+                                  ! ตามงาน: รอ {days} วัน (ทำเสร็จ {since})
+                                </span>
+                              ) : (
+                                <span className="text-xs font-medium text-gray-600 shrink-0">
+                                  ทำเสร็จ {since} · รอ {days} วัน
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                       </tr>

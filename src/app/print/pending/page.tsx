@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, TeacherColumn, getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
 import Link from 'next/link';
+import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { WAIT_ALERT_DAYS, isWaitingForTeacher, waitingDays, waitingSince } from '@/lib/homeworkRules';
 import { ArrowLeft, Printer, Filter } from 'lucide-react';
 
 export default function PrintPendingPage() {
@@ -35,14 +37,17 @@ export default function PrintPendingPage() {
 
   const loadData = async (name: string) => {
     try {
-      const [cols, tasks] = await Promise.all([
-        getTeacherColumns(name),
-        getChildTasks(name)
-      ]);
+      // ?demo=1 (เฉพาะตอน dev) = ข้อมูลสมมติ ไม่อ่าน/เขียน Firestore
+      const [cols, tasks] = isHomeworkDemoUrl()
+        ? (() => { const d = getHomeworkDemo(name); return [d.cols, d.tasks] as const; })()
+        : await Promise.all([
+            getTeacherColumns(name),
+            getChildTasks(name)
+          ]);
       // Filter only unchecked tasks in teacher sheet (งานที่ครูยังไม่ติ๊ก)
-      const pendingCols = cols.filter(c => !c.is_checked);
+      const pendingCols = cols.filter(c => !c.is_checked && !!c.sequence);
       setTeacherCols(pendingCols);
-      setChildTasks(tasks);
+      setChildTasks([...tasks]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -117,7 +122,7 @@ export default function PrintPendingPage() {
           }
         }
       `}} />
-      
+
       {/* Non-print controls toolbar */}
       <div className="mb-6 print:hidden bg-white p-4 sm:p-5 rounded-2xl border border-[#e2e8f0] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -130,8 +135,8 @@ export default function PrintPendingPage() {
             <div className="text-gray-500 text-xs hidden lg:block">
               💡 กดปุ่มพิมพ์ หรือกด <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">Ctrl</kbd> + <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">P</kbd>
             </div>
-            <button 
-              onClick={() => window.print()} 
+            <button
+              onClick={() => window.print()}
               className="flex items-center justify-center bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer active:scale-95 transition-all w-full sm:w-auto"
             >
               <Printer className="w-4 h-4 mr-1.5" />
@@ -197,8 +202,8 @@ export default function PrintPendingPage() {
                 <tbody>
                   {cols.map((col) => {
                     const linkedTask = colToTaskMap.get(col.id);
-                    const isSubmitted = linkedTask?.status === 'Submitted';
-                    const isDone = linkedTask?.status === 'Done';
+                    const isWaiting = isWaitingForTeacher(linkedTask);
+                    const days = isWaiting ? waitingDays(linkedTask!) : 0;
 
                     return (
                       <tr key={col.id} className="border-b border-black">
@@ -221,23 +226,19 @@ export default function PrintPendingPage() {
                                 </span>
                               ))}
 
-                              {/* Original Personal Draft if different */}
-                              {linkedTask?.original_personal_name && linkedTask.original_personal_name !== col.column_name && (
-                                <div className="text-xs text-gray-600 mt-0.5 font-normal">
-                                  <span>(เดิม: <em>{linkedTask.original_personal_name}</em>)</span>
-                                </div>
-                              )}
                             </div>
 
                             {/* Right side: Status Badge (only when submitted or done) */}
-                            {isSubmitted ? (
-                              <span className="inline-block border border-black bg-gray-100 font-bold text-[11px] px-2 py-0.5 rounded shrink-0">
-                                ✓ ส่งครูแล้ว
-                              </span>
-                            ) : isDone ? (
-                              <span className="inline-block border border-gray-500 text-gray-800 font-medium text-[11px] px-2 py-0.5 rounded shrink-0">
-                                ทำเสร็จแล้ว (รอส่ง)
-                              </span>
+                            {isWaiting ? (
+                              days >= WAIT_ALERT_DAYS ? (
+                                <span className="inline-block border-2 border-black bg-gray-200 font-black text-[11px] px-2 py-0.5 rounded shrink-0">
+                                  ! ตามงาน: รอครูติ๊ก {days} วัน
+                                </span>
+                              ) : (
+                                <span className="inline-block border border-black bg-gray-100 font-bold text-[11px] px-2 py-0.5 rounded shrink-0">
+                                  ✓ ทำเสร็จแล้ว รอครูติ๊ก
+                                </span>
+                              )
                             ) : null}
                           </div>
                         </td>

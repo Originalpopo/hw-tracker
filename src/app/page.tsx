@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
-import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText } from 'lucide-react';
+import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns, TeacherColumn } from '@/lib/db';
+import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong } from '@/lib/homeworkRules';
+import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import confetti from 'canvas-confetti';
@@ -12,12 +14,11 @@ interface SubjectStatDetail {
   done: number;
   officialTotal: number;
   officialDone: number;
-  personalTotal: number;
-  personalDone: number;
 }
 
 export default function DashboardOverview() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
+  const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [studentName, setStudentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [animateBars, setAnimateBars] = useState(false);
@@ -47,9 +48,18 @@ export default function DashboardOverview() {
   }, []);
 
   const loadData = async (name: string) => {
+    // ?demo=1 (เฉพาะตอน dev) = ข้อมูลสมมติ ไม่อ่าน/เขียน Firestore
+    if (isHomeworkDemoUrl()) {
+      const d = getHomeworkDemo(name);
+      setTasks(d.tasks);
+      setTeacherCols(d.cols);
+      setLoading(false);
+      return;
+    }
     try {
-      const data = await getChildTasks(name);
+      const [data, cols] = await Promise.all([getChildTasks(name), getTeacherColumns(name)]);
       setTasks(data);
+      setTeacherCols(cols);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -57,19 +67,23 @@ export default function DashboardOverview() {
     }
   };
 
-  // Stats calculation
-  const totalTasks = tasks.length;
-  const officialTotal = tasks.filter(t => !!t.teacher_column_id).length;
-  const personalTotal = tasks.filter(t => !t.teacher_column_id).length;
+  // Stats calculation: นับจากช่องในชีตครู - งานเสร็จ = ครูติ๊กแล้วเท่านั้น
+  // (เด็กกด "ทำเสร็จแล้ว" ยังไม่นับว่าเสร็จ เพราะเราตรวจไม่ได้ว่าส่งจริง)
+  const officialCols = teacherCols.filter(c => !!c.sequence);
+  const taskByCol = new Map<string, ChildTask>();
+  tasks.forEach(t => { if (t.teacher_column_id) taskByCol.set(t.teacher_column_id, t); });
 
-  const completedTasks = tasks.filter(t => ['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  const officialCompleted = tasks.filter(t => !!t.teacher_column_id && ['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  const personalCompleted = tasks.filter(t => !t.teacher_column_id && ['Done', 'Submitted', 'Verified'].includes(t.status)).length;
+  const totalTasks = officialCols.length;
+  const officialTotal = totalTasks;
 
-  const pendingTasks = tasks.filter(t => !['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  const officialPending = tasks.filter(t => !!t.teacher_column_id && !['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  const personalPending = tasks.filter(t => !t.teacher_column_id && !['Done', 'Submitted', 'Verified'].includes(t.status)).length;
-  
+  const completedTasks = officialCols.filter(c => c.is_checked).length;
+  const officialCompleted = completedTasks;
+
+  const pendingTasks = totalTasks - completedTasks;
+  const uncheckedCols = officialCols.filter(c => !c.is_checked);
+  const waitingCount = uncheckedCols.filter(c => isWaitingForTeacher(taskByCol.get(c.id))).length;
+  const waitTooLongCount = uncheckedCols.filter(c => { const t = taskByCol.get(c.id); return !!t && isWaitTooLong(t); }).length;
+
   const progressPercent = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
   const getProgressColorClass = (percent: number) => {
@@ -125,32 +139,25 @@ export default function DashboardOverview() {
     );
   }
 
-  // Subject progress calculation (Dual: Official Sheet Tasks vs Personal Tasks)
+  // Subject progress calculation (ช่องในชีตครู - เสร็จ = ครูติ๊กแล้ว)
   const subjectStats: Record<string, SubjectStatDetail> = {};
-  tasks.forEach(t => {
-    if (!t.subject) return;
-    const sub = t.subject.trim();
+  officialCols.forEach(c => {
+    if (!c.subject) return;
+    const sub = c.subject.trim();
     if (!subjectStats[sub]) {
-      subjectStats[sub] = { 
-        total: 0, 
-        done: 0, 
-        officialTotal: 0, 
-        officialDone: 0, 
-        personalTotal: 0, 
-        personalDone: 0 
+      subjectStats[sub] = {
+        total: 0,
+        done: 0,
+        officialTotal: 0,
+        officialDone: 0
       };
     }
-    const isDone = ['Done', 'Submitted', 'Verified'].includes(t.status);
+    const isDone = c.is_checked;
     subjectStats[sub].total += 1;
     if (isDone) subjectStats[sub].done += 1;
 
-    if (t.teacher_column_id) {
-      subjectStats[sub].officialTotal += 1;
-      if (isDone) subjectStats[sub].officialDone += 1;
-    } else {
-      subjectStats[sub].personalTotal += 1;
-      if (isDone) subjectStats[sub].personalDone += 1;
-    }
+    subjectStats[sub].officialTotal += 1;
+    if (isDone) subjectStats[sub].officialDone += 1;
   });
 
   const subjects = Object.keys(subjectStats).sort();
@@ -186,7 +193,7 @@ export default function DashboardOverview() {
 
           {/* Integrated Progress Bar */}
           <div className="w-full bg-black/20 backdrop-blur-xs rounded-full h-6 shadow-inner relative mt-2">
-            <div 
+            <div
               className={clsx(
                 "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
                 progressPercent === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-gradient-to-r from-amber-400 via-sky-300 to-emerald-400"
@@ -233,10 +240,6 @@ export default function DashboardOverview() {
                 <CheckSquare className="w-3.5 h-3.5 text-[#597ecf]" />
                 ชีตครู: <strong className="text-gray-900">{officialTotal}</strong>
               </span>
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <FileText className="w-3.5 h-3.5 text-gray-500" />
-                งานส่วนตัว: <strong className="text-gray-900">{personalTotal}</strong>
-              </span>
             </div>
           </div>
         </div>
@@ -253,7 +256,7 @@ export default function DashboardOverview() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-gray-900">ภารกิจที่ต้องเคลียร์!</h3>
-                <p className="text-gray-500 text-xs mt-0.5">งานที่ยังทำไม่เสร็จ</p>
+                <p className="text-gray-500 text-xs mt-0.5">งานที่ครูยังไม่ติ๊ก</p>
               </div>
             </div>
 
@@ -265,13 +268,15 @@ export default function DashboardOverview() {
             {/* Breakdown Sub-row with Monotone Icons */}
             <div className="mt-4 pt-3 border-t border-[#e2e8f0] flex items-center gap-2 text-xs font-semibold text-gray-600 flex-wrap">
               <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
-                ชีตครู: <strong className="text-gray-900">{officialPending}</strong>
+                <Clock className="w-3.5 h-3.5 text-[#597ecf]" />
+                ทำเสร็จ รอครูติ๊ก: <strong className="text-gray-900">{waitingCount}</strong>
               </span>
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <FileText className="w-3.5 h-3.5 text-gray-500" />
-                งานส่วนตัว: <strong className="text-gray-900">{personalPending}</strong>
-              </span>
+              {waitTooLongCount > 0 && (
+                <Link href="/homework" className="inline-flex items-center gap-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-700">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  รอเกิน {WAIT_ALERT_DAYS} วัน: <strong>{waitTooLongCount}</strong>
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -288,7 +293,7 @@ export default function DashboardOverview() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-gray-900">เก็บดาวได้แล้ว</h3>
-                <p className="text-gray-500 text-xs mt-0.5">งานที่ทำเสร็จทั้งหมด</p>
+                <p className="text-gray-500 text-xs mt-0.5">งานที่ครูติ๊กแล้ว</p>
               </div>
             </div>
 
@@ -303,17 +308,13 @@ export default function DashboardOverview() {
                 <CheckSquare className="w-3.5 h-3.5 text-[#57627a]" />
                 ชีตครู: <strong className="text-gray-900">{officialCompleted}</strong>
               </span>
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <FileText className="w-3.5 h-3.5 text-gray-500" />
-                งานส่วนตัว: <strong className="text-gray-900">{personalCompleted}</strong>
-              </span>
             </div>
           </div>
         </div>
 
       </div>
 
-      {/* Subject Progress Cards (Dual Bars: Official Sheet Tasks vs Personal Tasks) */}
+      {/* Subject Progress Cards (งานจากชีตครู) */}
       <div className="mt-8">
         <h2 className="text-xl font-bold text-gray-800 flex items-center mb-6">
           <BookOpen className="w-6 h-6 text-[#597ecf] mr-2" />
@@ -324,17 +325,16 @@ export default function DashboardOverview() {
             const stats = subjectStats[subject];
             const pendingCount = stats.total - stats.done;
             const overallPercent = stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100);
-            
+
             const officialPercent = stats.officialTotal === 0 ? 100 : Math.round((stats.officialDone / stats.officialTotal) * 100);
-            const personalPercent = stats.personalTotal === 0 ? 100 : Math.round((stats.personalDone / stats.personalTotal) * 100);
 
             const isCompleted = pendingCount === 0 && stats.total > 0;
 
             const cardContent = (
               <div className={clsx(
                 "rounded-3xl p-5 shadow-xs border flex flex-col justify-between transition-all duration-300 relative overflow-hidden",
-                !isCompleted 
-                  ? "bg-white border-[#e2e8f0] hover:shadow-md hover:-translate-y-1 hover:border-[#597ecf]/40 cursor-pointer group" 
+                !isCompleted
+                  ? "bg-white border-[#e2e8f0] hover:shadow-md hover:-translate-y-1 hover:border-[#597ecf]/40 cursor-pointer group"
                   : "bg-gradient-to-br from-emerald-500 to-teal-700 border-emerald-600 text-white shadow-md"
               )}>
                 {isCompleted && (
@@ -375,7 +375,7 @@ export default function DashboardOverview() {
 
                 {/* Dual Bars Section */}
                 <div className="relative z-10 space-y-3.5 pt-1">
-                  
+
                   {/* Bar 1: งานตามชีตครู */}
                   <div>
                     <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
@@ -389,7 +389,7 @@ export default function DashboardOverview() {
                       </span>
                     </div>
                     <div className={clsx("w-full rounded-full h-3 relative shadow-inner overflow-visible", !isCompleted ? "bg-[#f1f3f6]" : "bg-white/20")}>
-                      <div 
+                      <div
                         className={clsx(
                           "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
                           isCompleted ? "bg-white/70" : officialPercent === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-gradient-to-r from-orange-300 via-amber-400 to-emerald-500"
@@ -399,40 +399,6 @@ export default function DashboardOverview() {
                         {officialPercent > 0 && (
                           <span className="absolute -right-3.5 top-1/2 -translate-y-1/2 text-2xl leading-none drop-shadow-md z-10 pointer-events-none flex items-center justify-center">
                             {officialPercent === 100 ? '🏆' : <span className="inline-block rotate-45">✈️</span>}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bar 2: งานส่วนตัว */}
-                  <div>
-                    <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
-                      <span className={clsx("flex items-center gap-1.5", !isCompleted ? "text-gray-700" : "text-emerald-50")}>
-                        <FileText className="w-3.5 h-3.5 opacity-80" />
-                        <span>งานส่วนตัว:</span>
-                        <span className="font-normal">{stats.personalDone}/{stats.personalTotal}</span>
-                      </span>
-                      <span className={!isCompleted ? "text-gray-600 font-bold" : "text-white font-bold"}>
-                        {personalPercent}%
-                      </span>
-                    </div>
-                    <div className={clsx("w-full rounded-full h-3 relative shadow-inner overflow-visible", !isCompleted ? "bg-[#f1f3f6]" : "bg-white/20")}>
-                      <div 
-                        className={clsx(
-                          "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
-                          isCompleted ? "bg-white/70" : personalPercent === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-gradient-to-r from-orange-300 via-amber-400 to-emerald-500"
-                        )}
-                        style={{ width: animateBars ? `${personalPercent}%` : '0%' }}
-                      >
-                        {personalPercent > 0 && (
-                          <span className={clsx(
-                            "absolute leading-none drop-shadow-md z-10 pointer-events-none flex items-center justify-center",
-                            personalPercent === 100 
-                              ? "-right-3.5 top-1/2 -translate-y-1/2 text-2xl" 
-                              : "-right-5 top-1/2 -translate-y-[72%] text-4xl"
-                          )}>
-                            {personalPercent === 100 ? '🏆' : <span className="inline-block scale-x-[-1]">🏎️</span>}
                           </span>
                         )}
                       </div>

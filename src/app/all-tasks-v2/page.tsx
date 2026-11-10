@@ -2,26 +2,29 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
-import { 
-  CheckSquare, 
-  AlertCircle, 
-  RefreshCcw, 
-  CheckCircle2, 
-  BookOpen, 
-  X, 
-  Eye, 
-  EyeOff, 
-  ListTodo, 
-  Columns3, 
-  Rows3, 
-  Clock, 
-  Flame, 
+import {
+  CheckSquare,
+  AlertCircle,
+  RefreshCcw,
+  CheckCircle2,
+  BookOpen,
+  X,
+  Eye,
+  EyeOff,
+  ListTodo,
+  Columns3,
+  Rows3,
+  Clock,
+  Flame,
   FileText,
   Calendar,
   Tag,
-  History
+  History,
+  AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
+import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong, waitingDays } from '@/lib/homeworkRules';
 import { clsx } from 'clsx';
 
 // Safe timestamp extractor helper
@@ -44,12 +47,6 @@ const getTodayDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
-// Check if a personal task has passed its due date (only tasks with explicit due_date)
-const isPersonalTaskOverdue = (task: ChildTask, todayStr: string): boolean => {
-  if (!task.due_date || !task.due_date.trim()) return false;
-  return task.due_date.trim() < todayStr;
-};
-
 export default function AllTasksV2Page() {
   const [studentName, setStudentName] = useState<string | null>(null);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
@@ -58,14 +55,11 @@ export default function AllTasksV2Page() {
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
   const [syncWarnings, setSyncWarnings] = useState<{ url: string; error: string }[]>([]);
-  
-  // 2-Mode Segmented Control: 'official' (งานตามชีตครู) vs 'personal' (งานส่วนตัว)
-  const [filterType, setFilterType] = useState<'official' | 'personal'>('official');
 
   // Filter & Layout View Options
   const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [hideCompleted, setHideCompleted] = useState(false);
-  
+
   // Floating Tooltip State (bypasses overflow clipping)
   const [hoveredTask, setHoveredTask] = useState<{
     x: number;
@@ -81,9 +75,8 @@ export default function AllTasksV2Page() {
   const [selectedTaskModal, setSelectedTaskModal] = useState<{
     subject: string;
     seq: number;
-    taskType: 'official' | 'personal';
+    taskType: 'official';
     taskName: string;
-    originalPersonalName?: string;
     revisionCount?: number;
     revisionHistory?: any[];
     assignedDate?: string;
@@ -91,7 +84,8 @@ export default function AllTasksV2Page() {
     date?: string;
     note?: string;
     tags?: string[];
-    status: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New';
+    status: 'Checked' | 'WaitingTeacher' | 'WaitTooLong' | 'Overdue' | 'New';
+    colId: string;
     statusText: string;
   } | null>(null);
 
@@ -104,11 +98,7 @@ export default function AllTasksV2Page() {
         setLayoutMode(savedLayout);
       }
 
-      const savedFilterType = localStorage.getItem('hw_all_tasks_filter_type') as 'official' | 'personal' | null;
-      if (savedFilterType === 'official' || savedFilterType === 'personal') {
-        setFilterType(savedFilterType);
-      }
-      
+
       const globalSettings = await getGlobalSettings();
       if (globalSettings) {
         savedName = globalSettings.student_name || savedName;
@@ -118,7 +108,7 @@ export default function AllTasksV2Page() {
       }
 
       setStudentName(savedName || null);
-      
+
       let urls: string[] = [];
       if (savedUrlsStr) {
         urls = savedUrlsStr.split('\n').map(u => u.trim()).filter(Boolean);
@@ -134,11 +124,6 @@ export default function AllTasksV2Page() {
     init();
   }, []);
 
-  const handleFilterTypeChange = (type: 'official' | 'personal') => {
-    setFilterType(type);
-    localStorage.setItem('hw_all_tasks_filter_type', type);
-  };
-
   const handleLayoutChange = (mode: 'vertical' | 'horizontal') => {
     setLayoutMode(mode);
     localStorage.setItem('hw_all_tasks_layout_mode', mode);
@@ -146,6 +131,14 @@ export default function AllTasksV2Page() {
 
   const loadData = async (name: string) => {
     setLoading(true);
+    // ?demo=1 (เฉพาะตอน dev) = ข้อมูลสมมติ ไม่อ่าน/เขียน Firestore
+    if (isHomeworkDemoUrl()) {
+      const d = getHomeworkDemo(name);
+      setTeacherCols(d.cols);
+      setChildTasks(d.tasks);
+      setLoading(false);
+      return;
+    }
     try {
       const [cols, tasks] = await Promise.all([
         getTeacherColumns(name),
@@ -161,6 +154,7 @@ export default function AllTasksV2Page() {
   };
 
   const handleSync = async () => {
+    if (isHomeworkDemoUrl()) return;
     if (!studentName || sheetUrls.length === 0) {
       alert("กรุณาตั้งค่าลิงก์ Google Sheet ในหน้า Settings ก่อนครับ");
       return;
@@ -190,15 +184,15 @@ export default function AllTasksV2Page() {
     }
   };
 
-  // Status mapping for teacher columns
-  const mappedTeacherColStatus = useMemo(() => {
-    const statusMap = new Map<string, string>();
+  // งานฝั่งเด็กของแต่ละช่องในชีตครู
+  const taskByCol = useMemo(() => {
+    const map = new Map<string, ChildTask>();
     childTasks.forEach(task => {
       if (task.teacher_column_id) {
-        statusMap.set(task.teacher_column_id, task.status);
+        map.set(task.teacher_column_id, task);
       }
     });
-    return statusMap;
+    return map;
   }, [childTasks]);
 
   // Dynamic progress text color helper matching Dashboard
@@ -219,18 +213,18 @@ export default function AllTasksV2Page() {
     let overdueCount = 0;
     let newCount = 0;
     let totalCount = 0;
+    let waitTooLongCount = 0;
 
     teacherCols.forEach(col => {
       if (col.sequence) {
         totalCount++;
-        const mappedStatus = mappedTeacherColStatus.get(col.id);
-        const isMapped = mappedStatus !== undefined;
-        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+        const isSubmittedOrDone = isWaitingForTeacher(taskByCol.get(col.id));
 
         if (col.is_checked) {
           checkedCount++;
         } else if (isSubmittedOrDone) {
           waitingCount++;
+          if (isWaitTooLong(taskByCol.get(col.id)!)) waitTooLongCount++;
         } else {
           const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
           if (isOld) {
@@ -242,8 +236,8 @@ export default function AllTasksV2Page() {
       }
     });
 
-    return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
-  }, [teacherCols, mappedTeacherColStatus]);
+    return { checkedCount, waitingCount, overdueCount, newCount, totalCount, waitTooLongCount };
+  }, [teacherCols, taskByCol]);
 
   const officialSubjectStacks = useMemo(() => {
     const sMap = new Map<string, TeacherColumn[]>();
@@ -277,9 +271,7 @@ export default function AllTasksV2Page() {
       let waiting = 0;
 
       list.forEach(col => {
-        const mappedStatus = mappedTeacherColStatus.get(col.id);
-        const isMapped = mappedStatus !== undefined;
-        const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
+        const isSubmittedOrDone = isWaitingForTeacher(taskByCol.get(col.id));
 
         if (col.is_checked) {
           checked++;
@@ -307,7 +299,7 @@ export default function AllTasksV2Page() {
     });
 
     return result;
-  }, [teacherCols, mappedTeacherColStatus]);
+  }, [teacherCols, taskByCol]);
 
   const displayedOfficialStacks = useMemo(() => {
     if (!hideCompleted) return officialSubjectStacks;
@@ -319,120 +311,10 @@ export default function AllTasksV2Page() {
     });
   }, [officialSubjectStacks, hideCompleted]);
 
-  // -------------------------------------------------------------
-  // 2. DATA PROCESSING FOR PERSONAL (PRIVATE NOTES) TASKS
-  // -------------------------------------------------------------
-  const personalTasks = useMemo(() => {
-    return childTasks.filter(t => t.task_type === 'personal' || (!t.task_type && !t.teacher_column_id));
-  }, [childTasks]);
-
-  const personalStats = useMemo(() => {
-    const todayStr = getTodayDateString();
-    let checkedCount = 0;
-    let waitingCount = 0;
-    let overdueCount = 0;
-    let newCount = 0;
-    let totalCount = personalTasks.length;
-
-    personalTasks.forEach(task => {
-      if (task.status === 'Verified') {
-        checkedCount++;
-      } else if (task.status === 'Done') {
-        waitingCount++;
-      } else {
-        const isOverdue = isPersonalTaskOverdue(task, todayStr);
-        if (isOverdue) {
-          overdueCount++;
-        } else {
-          newCount++;
-        }
-      }
-    });
-
-    return { checkedCount, waitingCount, overdueCount, newCount, totalCount };
-  }, [personalTasks]);
-
-  const personalSubjectStacks = useMemo(() => {
-    const todayStr = getTodayDateString();
-    const sMap = new Map<string, ChildTask[]>();
-
-    personalTasks.forEach(task => {
-      const subject = task.subject?.trim() || 'อื่นๆ';
-      if (!sMap.has(subject)) {
-        sMap.set(subject, []);
-      }
-      sMap.get(subject)!.push(task);
-    });
-
-    const result: {
-      subject: string;
-      tasks: { task: ChildTask; seq: number }[];
-      total: number;
-      checked: number;
-      pending: number;
-      overdue: number;
-      waiting: number;
-      progress: number;
-    }[] = [];
-
-    Array.from(sMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(subject => {
-      const rawList = [...sMap.get(subject)!];
-      // Sort chronological ascending to assign sequence #1, #2, #3...
-      rawList.sort((a, b) => getTimestamp(a.created_at) - getTimestamp(b.created_at));
-      const sequencedList = rawList.map((task, idx) => ({ task, seq: idx + 1 }));
-
-      // Sort descending for display (newest on top / left)
-      sequencedList.sort((a, b) => b.seq - a.seq);
-
-      let checked = 0;
-      let overdue = 0;
-      let waiting = 0;
-
-      sequencedList.forEach(({ task }) => {
-        if (task.status === 'Verified') {
-          checked++;
-        } else if (task.status === 'Done') {
-          waiting++;
-        } else {
-          const isOverdue = isPersonalTaskOverdue(task, todayStr);
-          if (isOverdue) overdue++;
-        }
-      });
-
-      const total = sequencedList.length;
-      const progress = total === 0 ? 0 : Math.round((checked / total) * 100);
-
-      result.push({
-        subject,
-        tasks: sequencedList,
-        total,
-        checked,
-        pending: total - checked,
-        overdue,
-        waiting,
-        progress
-      });
-    });
-
-    return result;
-  }, [personalTasks]);
-
-  const displayedPersonalStacks = useMemo(() => {
-    if (!hideCompleted) return personalSubjectStacks;
-    return [...personalSubjectStacks].sort((a, b) => {
-      if (b.pending !== a.pending) {
-        return b.pending - a.pending;
-      }
-      return a.subject.localeCompare(b.subject);
-    });
-  }, [personalSubjectStacks, hideCompleted]);
-
-  // Current active stats & stacks based on filterType
-  const currentStats = filterType === 'official' ? officialStats : personalStats;
+  const currentStats = officialStats;
 
   // Counts for toggle buttons
   const countOfficialPending = officialStats.totalCount - officialStats.checkedCount;
-  const countPersonalPending = personalStats.totalCount - personalStats.checkedCount;
 
   if (!studentName) {
     return (
@@ -454,14 +336,12 @@ export default function AllTasksV2Page() {
   // -------------------------------------------------------------
   const renderOfficialTaskTile = (col: TeacherColumn, stackSubject: string) => {
     const seq = col.sequence || 0;
-    const mappedStatus = mappedTeacherColStatus.get(col.id);
-    const isMapped = mappedStatus !== undefined;
-    const isSubmittedOrDone = isMapped && ['Done', 'Submitted', 'Verified'].includes(mappedStatus as string);
-    const associatedTask = childTasks.find(t => t.teacher_column_id === col.id);
+    const associatedTask = taskByCol.get(col.id);
+    const isSubmittedOrDone = isWaitingForTeacher(associatedTask);
 
     let cardBg = "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
     const isOld = !col.first_seen_at || (Date.now() - col.first_seen_at > 3 * 24 * 60 * 60 * 1000);
-    let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
+    let statusKey: 'Checked' | 'WaitingTeacher' | 'WaitTooLong' | 'Overdue' | 'New' = isOld ? 'Overdue' : 'New';
     let statusText = isOld ? "งานค้างเกิน 3 วัน (ยังไม่ส่ง)" : "งานใหม่ (ยังไม่ส่ง)";
     let iconNode = isOld ? (
       <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-700 shrink-0" />
@@ -475,10 +355,19 @@ export default function AllTasksV2Page() {
       statusKey = 'Checked';
       statusText = "ครูตรวจแล้วเรียบร้อย";
     } else if (isSubmittedOrDone) {
-      cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
-      iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
-      statusKey = 'WaitingTeacher';
-      statusText = "เด็กส่งแล้ว (รอครูอัปเดตคะแนน)";
+      const days = waitingDays(associatedTask!);
+      if (days >= WAIT_ALERT_DAYS) {
+        // ทำเสร็จนานแล้วครูยังไม่ติ๊ก - อาจยังไม่ได้ส่ง หรือต้องแก้
+        cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-rose-500 border-2 shadow-xs";
+        iconNode = <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 shrink-0" />;
+        statusKey = 'WaitTooLong';
+        statusText = `ทำเสร็จ ${days} วันแล้ว ครูยังไม่ติ๊ก (ตามงานกับครู)`;
+      } else {
+        cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
+        iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
+        statusKey = 'WaitingTeacher';
+        statusText = days === 0 ? 'ทำเสร็จวันนี้ (รอครูติ๊ก)' : `ทำเสร็จ ${days} วันที่แล้ว (รอครูติ๊ก)`;
+      }
     } else if (isOld) {
       cardBg = "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs";
     }
@@ -493,7 +382,6 @@ export default function AllTasksV2Page() {
             seq,
             taskType: 'official',
             taskName: col.column_name,
-            originalPersonalName: associatedTask?.original_personal_name,
             revisionCount: associatedTask?.revision_count,
             revisionHistory: associatedTask?.revision_history,
             assignedDate: associatedTask?.assigned_date || associatedTask?.date,
@@ -502,6 +390,7 @@ export default function AllTasksV2Page() {
             note: associatedTask?.note,
             tags: associatedTask?.tags,
             status: statusKey,
+            colId: col.id,
             statusText
           });
         }}
@@ -534,87 +423,9 @@ export default function AllTasksV2Page() {
     );
   };
 
-  const renderPersonalTaskTile = (task: ChildTask, seq: number, stackSubject: string) => {
-    const todayStr = getTodayDateString();
-    const isOverdue = isPersonalTaskOverdue(task, todayStr);
-
-    let cardBg = "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
-    let statusKey: 'Checked' | 'WaitingTeacher' | 'Overdue' | 'New' = isOverdue ? 'Overdue' : 'New';
-    let statusText = isOverdue ? "เกินกำหนดส่งงาน (ยังไม่เสร็จ)" : "งานที่ต้องทำ (ยังไม่เสร็จ)";
-    let iconNode = isOverdue ? (
-      <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-700 shrink-0" />
-    ) : (
-      <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-700 shrink-0" />
-    );
-
-    if (task.status === 'Verified') {
-      cardBg = "bg-emerald-50/40 hover:bg-emerald-200 text-emerald-950 border-emerald-400 shadow-2xs";
-      iconNode = <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />;
-      statusKey = 'Checked';
-      statusText = "ตรวจความเรียบร้อยแล้ว (เสร็จสมบูรณ์)";
-    } else if (task.status === 'Done') {
-      cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
-      iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
-      statusKey = 'WaitingTeacher';
-      statusText = "ทำเสร็จแล้ว (รอตรวจ)";
-    } else if (isOverdue) {
-      cardBg = "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs";
-    }
-
-    return (
-      <div
-        key={task.id || `personal-${stackSubject}-${seq}`}
-        onClick={() => {
-          setHoveredTask(null);
-          setSelectedTaskModal({
-            subject: stackSubject,
-            seq,
-            taskType: 'personal',
-            taskName: task.task_name,
-            originalPersonalName: task.original_personal_name,
-            revisionCount: task.revision_count,
-            revisionHistory: task.revision_history,
-            assignedDate: task.assigned_date || task.date,
-            dueDate: task.due_date,
-            date: task.date,
-            note: task.note,
-            tags: task.tags,
-            status: statusKey,
-            statusText
-          });
-        }}
-        onMouseEnter={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const showBelow = rect.top < 130;
-          setHoveredTask({
-            x: rect.left + rect.width / 2,
-            y: showBelow ? rect.bottom + 8 : rect.top - 8,
-            isBottom: showBelow,
-            subject: stackSubject,
-            seq,
-            name: task.task_name,
-            statusText
-          });
-        }}
-        onMouseLeave={() => setHoveredTask(null)}
-        className={clsx(
-          "relative rounded-xl h-[44px] sm:h-[48px] w-[44px] sm:w-[48px] shrink-0 border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
-          cardBg
-        )}
-      >
-        <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">
-          {seq}
-        </span>
-        <div className="mt-1 flex items-center justify-center">
-          {iconNode}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      
+
       {/* Header section adhering to AGENTS.md standard */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
@@ -623,7 +434,7 @@ export default function AllTasksV2Page() {
             งานทั้งหมด (All Tasks)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            ตารางแสดงสถานะงานทุกวิชา • สลับดูงานตามชีตครูและงานส่วนตัวได้
+            ตารางแสดงสถานะงานจากชีตครูทุกวิชา
           </p>
         </div>
 
@@ -663,8 +474,8 @@ export default function AllTasksV2Page() {
             onClick={() => setHideCompleted(!hideCompleted)}
             className={clsx(
               "h-[42px] px-4 rounded-xl text-sm font-semibold border flex items-center transition-all active:scale-95 w-full sm:w-auto justify-center cursor-pointer",
-              hideCompleted 
-                ? "bg-[#eef3fc] border-[#597ecf]/30 text-[#597ecf] shadow-xs font-bold" 
+              hideCompleted
+                ? "bg-[#eef3fc] border-[#597ecf]/30 text-[#597ecf] shadow-xs font-bold"
                 : "bg-white border-[#e2e8f0] text-gray-700 hover:bg-[#f4f7fa] shadow-xs"
             )}
           >
@@ -711,47 +522,18 @@ export default function AllTasksV2Page() {
         </div>
       )}
 
-      {/* 2-Mode Segmented Control Switcher & Summary Stats Toolbar */}
+      {/* Summary Stats Toolbar */}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-[#e2e8f0] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-        {/* Left Side: 2-Mode Segmented Control Buttons */}
+        {/* Left Side: หัวข้องานตามชีตครู */}
         <div className="flex items-center gap-2 overflow-x-auto w-full xl:w-auto pb-1 xl:pb-0">
-          <button
-            onClick={() => handleFilterTypeChange('official')}
-            className={clsx(
-              "px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 shadow-xs",
-              filterType === 'official'
-                ? "bg-[#597ecf] text-white"
-                : "bg-[#eef3fc] text-[#597ecf] hover:bg-[#e2ebf9] border border-[#597ecf]/30"
-            )}
-          >
+          <span className="px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap shadow-xs bg-[#597ecf] text-white">
             <CheckSquare className="w-4 h-4" />
             <span>งานตามชีตครู</span>
-            <span className={clsx(
-              "px-2 py-0.5 rounded-full text-xs font-extrabold", 
-              filterType === 'official' ? "bg-white/20 text-white" : "bg-[#597ecf]/20 text-[#597ecf]"
-            )}>
+            <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-white/20 text-white">
               {countOfficialPending}
             </span>
-          </button>
+          </span>
 
-          <button
-            onClick={() => handleFilterTypeChange('personal')}
-            className={clsx(
-              "px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 shadow-xs",
-              filterType === 'personal'
-                ? "bg-[#57627a] text-white"
-                : "bg-[#eff2f7] text-[#57627a] hover:bg-[#e2e6eb] border border-[#57627a]/30"
-            )}
-          >
-            <FileText className="w-4 h-4" />
-            <span>งานส่วนตัว</span>
-            <span className={clsx(
-              "px-2 py-0.5 rounded-full text-xs font-extrabold", 
-              filterType === 'personal' ? "bg-white/20 text-white" : "bg-[#57627a]/20 text-[#57627a]"
-            )}>
-              {countPersonalPending}
-            </span>
-          </button>
         </div>
 
         {/* Right Side: Integrated Status Summary Group */}
@@ -766,28 +548,37 @@ export default function AllTasksV2Page() {
           {/* Checked / Verified */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-medium text-emerald-900">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="text-emerald-700">{filterType === 'official' ? 'ตรวจแล้ว:' : 'เสร็จสมบูรณ์:'}</span>
+            <span className="text-emerald-700">ตรวจแล้ว:</span>
             <span className="font-extrabold text-emerald-700">{currentStats.checkedCount}</span>
           </div>
 
-          {/* Waiting / Done */}
+          {/* ทำเสร็จแล้ว รอครูติ๊ก */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#eef3fc] rounded-xl border border-[#597ecf]/30 text-xs font-medium text-[#597ecf]">
             <Clock className="w-3.5 h-3.5 text-[#597ecf] shrink-0" />
-            <span>{filterType === 'official' ? 'รอครูอัปเดต:' : 'ทำเสร็จ (รอตรวจ):'}</span>
+            <span>รอครูติ๊ก:</span>
             <span className="font-extrabold">{currentStats.waitingCount}</span>
           </div>
+
+          {/* รอครูติ๊กเกินกำหนด */}
+          {currentStats.waitTooLongCount > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-300 text-xs font-medium text-rose-800">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              <span>รอครูติ๊กเกิน {WAIT_ALERT_DAYS} วัน:</span>
+              <span className="font-extrabold">{currentStats.waitTooLongCount}</span>
+            </div>
+          )}
 
           {/* Overdue */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-200 text-xs font-medium text-rose-800">
             <Flame className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-            <span className="text-rose-700">{filterType === 'official' ? 'งานค้าง (>3 วัน):' : 'เกินกำหนดส่ง:'}</span>
+            <span className="text-rose-700">งานค้าง (&gt;3 วัน):</span>
             <span className="font-extrabold text-rose-700">{currentStats.overdueCount}</span>
           </div>
 
           {/* New / Pending */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-200 text-xs font-medium text-amber-900">
             <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="text-amber-700">{filterType === 'official' ? 'งานใหม่:' : 'ยังไม่ทำ:'}</span>
+            <span className="text-amber-700">งานใหม่:</span>
             <span className="font-extrabold text-amber-700">{currentStats.newCount}</span>
           </div>
         </div>
@@ -798,7 +589,7 @@ export default function AllTasksV2Page() {
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#597ecf]"></div>
         </div>
-      ) : filterType === 'official' && displayedOfficialStacks.length === 0 ? (
+      ) : displayedOfficialStacks.length === 0 ? (
         <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
           <div className="bg-[#eef3fc] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
             <CheckCircle2 className="w-8 h-8 text-[#597ecf]" />
@@ -816,23 +607,6 @@ export default function AllTasksV2Page() {
             {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
           </button>
         </div>
-      ) : filterType === 'personal' && displayedPersonalStacks.length === 0 ? (
-        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
-          <div className="bg-[#eff2f7] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
-            <FileText className="w-8 h-8 text-[#57627a]" />
-          </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">ยังไม่มีงานส่วนตัว</h3>
-          <p className="text-gray-500 mb-6 text-sm max-w-md mx-auto">
-            คุณสามารถเพิ่มงานส่วนตัวที่ต้องการทำด้วยตนเอง หรือบันทึกเพิ่มเติมได้ที่หน้าการบ้านของฉัน
-          </p>
-          <Link
-            href="/homework"
-            className="inline-flex items-center bg-[#57627a] hover:bg-[#434c60] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
-          >
-            <BookOpen className="w-4 h-4 mr-2" />
-            ไปหน้าการบ้านของฉัน
-          </Link>
-        </div>
       ) : (
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-[#e2e8f0]">
           {/* ======================================================== */}
@@ -841,13 +615,13 @@ export default function AllTasksV2Page() {
           {layoutMode === 'vertical' && (
             <div className="overflow-x-auto pb-4 scrollbar-hover">
               <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
-                
+
                 {/* 1. Official Mode Vertical Columns */}
-                {filterType === 'official' && displayedOfficialStacks.map((stack) => {
+                {displayedOfficialStacks.map((stack) => {
                   const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                   return (
-                    <div 
+                    <div
                       key={`official-col-${stack.subject}`}
                       className="w-[66px] sm:w-[76px] flex flex-col bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-1.5 shadow-2xs relative"
                     >
@@ -863,7 +637,7 @@ export default function AllTasksV2Page() {
                         </div>
 
                         <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
-                          <span 
+                          <span
                             className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
                             title={stack.subject}
                           >
@@ -881,11 +655,11 @@ export default function AllTasksV2Page() {
                             </span>
                           </div>
                           <div className="w-full bg-[#f4f7fa] rounded-full h-1.5 mt-1 overflow-hidden">
-                            <div 
+                            <div
                               className={clsx(
                                 "h-full transition-all duration-700 rounded-full",
-                                stack.progress === 100 
-                                  ? "bg-emerald-500" 
+                                stack.progress === 100
+                                  ? "bg-emerald-500"
                                   : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
                               )}
                               style={{ width: `${stack.progress}%` }}
@@ -909,72 +683,6 @@ export default function AllTasksV2Page() {
                   );
                 })}
 
-                {/* 2. Personal Mode Vertical Columns */}
-                {filterType === 'personal' && displayedPersonalStacks.map((stack) => {
-                  const visibleTasks = hideCompleted ? stack.tasks.filter(item => item.task.status !== 'Verified') : stack.tasks;
-
-                  return (
-                    <div 
-                      key={`personal-col-${stack.subject}`}
-                      className="w-[66px] sm:w-[76px] flex flex-col bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-1.5 shadow-2xs relative"
-                    >
-                      {/* Vertical Rotated Subject Header */}
-                      <div className="bg-white rounded-xl py-2.5 px-1 border border-[#e2e8f0] shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden">
-                        <div className="z-10">
-                          <span className={clsx(
-                            "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
-                            stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                          )}>
-                            {stack.pending > 0 ? `-${stack.pending}` : '✓'}
-                          </span>
-                        </div>
-
-                        <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
-                          <span 
-                            className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
-                            title={stack.subject}
-                          >
-                            {stack.subject}
-                          </span>
-                        </div>
-
-                        <div className="w-full flex flex-col items-center pt-1.5 border-t border-[#e2e8f0] z-10">
-                          <div className="flex items-center justify-between w-full px-0.5 text-[9px] sm:text-[10px]">
-                            <span className="font-bold text-gray-500 font-mono leading-none">
-                              {stack.total}
-                            </span>
-                            <span className={clsx("font-mono leading-none", getProgressColorClass(stack.progress))}>
-                              {stack.progress}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-[#f4f7fa] rounded-full h-1.5 mt-1 overflow-hidden">
-                            <div 
-                              className={clsx(
-                                "h-full transition-all duration-700 rounded-full",
-                                stack.progress === 100 
-                                  ? "bg-emerald-500" 
-                                  : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
-                              )}
-                              style={{ width: `${stack.progress}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Compact Task Tiles */}
-                      <div className="flex flex-col gap-1.5">
-                        {visibleTasks.map(({ task, seq }) => renderPersonalTaskTile(task, seq, stack.subject))}
-
-                        {visibleTasks.length === 0 && (
-                          <div className="py-4 text-center bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex flex-col items-center justify-center gap-1">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span className="text-[10px] text-emerald-700 font-bold">ครบแล้ว</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
 
               </div>
             </div>
@@ -985,13 +693,13 @@ export default function AllTasksV2Page() {
           {/* ======================================================== */}
           {layoutMode === 'horizontal' && (
             <div className="flex flex-col gap-3 w-full">
-              
+
               {/* 1. Official Mode Horizontal Rows */}
-              {filterType === 'official' && displayedOfficialStacks.map((stack) => {
+              {displayedOfficialStacks.map((stack) => {
                 const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
 
                 return (
-                  <div 
+                  <div
                     key={`official-row-${stack.subject}`}
                     className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
                   >
@@ -1019,11 +727,11 @@ export default function AllTasksV2Page() {
                       </div>
 
                       <div className="w-full bg-[#f4f7fa] rounded-full h-2 overflow-hidden shadow-inner">
-                        <div 
+                        <div
                           className={clsx(
                             "h-full transition-all duration-700 rounded-full",
-                            stack.progress === 100 
-                              ? "bg-emerald-500" 
+                            stack.progress === 100
+                              ? "bg-emerald-500"
                               : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
                           )}
                           style={{ width: `${stack.progress}%` }}
@@ -1046,65 +754,6 @@ export default function AllTasksV2Page() {
                 );
               })}
 
-              {/* 2. Personal Mode Horizontal Rows */}
-              {filterType === 'personal' && displayedPersonalStacks.map((stack) => {
-                const visibleTasks = hideCompleted ? stack.tasks.filter(item => item.task.status !== 'Verified') : stack.tasks;
-
-                return (
-                  <div 
-                    key={`personal-row-${stack.subject}`}
-                    className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
-                  >
-                    {/* Horizontal Subject Info Card (Left) */}
-                    <div className="w-full md:w-[220px] shrink-0 bg-white rounded-xl p-3 border border-[#e2e8f0] shadow-2xs flex flex-row md:flex-col justify-between items-center md:items-start gap-2">
-                      <div className="flex items-center justify-between w-full">
-                        <span className="text-sm font-black text-gray-900 tracking-tight line-clamp-1" title={stack.subject}>
-                          {stack.subject}
-                        </span>
-                        <span className={clsx(
-                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 shadow-2xs ml-2",
-                          stack.pending > 0 ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                        )}>
-                          {stack.pending > 0 ? `-${stack.pending}` : '✓ ครบ'}
-                        </span>
-                      </div>
-
-                      <div className="w-full flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-[#e2e8f0] md:border-t-0 md:pt-0">
-                        <span className="text-[11px] font-medium text-gray-500">
-                          ทั้งหมด: <strong className="text-gray-800">{stack.total}</strong> ชิ้น
-                        </span>
-                        <span className={clsx("text-xs font-mono font-black", getProgressColorClass(stack.progress))}>
-                          {stack.progress}%
-                        </span>
-                      </div>
-
-                      <div className="w-full bg-[#f4f7fa] rounded-full h-2 overflow-hidden shadow-inner">
-                        <div 
-                          className={clsx(
-                            "h-full transition-all duration-700 rounded-full",
-                            stack.progress === 100 
-                              ? "bg-emerald-500" 
-                              : "bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500"
-                          )}
-                          style={{ width: `${stack.progress}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Task Tiles Strip */}
-                    <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1.5 px-1 min-w-0 scrollbar-hover">
-                      {visibleTasks.map(({ task, seq }) => renderPersonalTaskTile(task, seq, stack.subject))}
-
-                      {visibleTasks.length === 0 && (
-                        <div className="py-2.5 px-4 text-xs text-emerald-700 font-bold bg-white/60 rounded-xl border border-dashed border-emerald-200 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>ตรวจครบเรียบร้อยแล้ว</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
 
             </div>
           )}
@@ -1114,7 +763,7 @@ export default function AllTasksV2Page() {
 
       {/* Floating Tooltip Portal (Never clipped by overflow or table borders) */}
       {hoveredTask && (
-        <div 
+        <div
           className="fixed z-[99999] pointer-events-none transition-opacity duration-150 shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5)] border border-gray-700 ring-1 ring-white/10 bg-gray-950 text-white text-xs p-3 rounded-2xl w-max max-w-[260px] animate-in fade-in zoom-in-95 duration-100"
           style={{
             left: `${hoveredTask.x}px`,
@@ -1133,8 +782,8 @@ export default function AllTasksV2Page() {
           </div>
           <div className={clsx(
             "absolute left-1/2 -translate-x-1/2 border-6 border-transparent",
-            hoveredTask.isBottom 
-              ? "bottom-full border-b-gray-950" 
+            hoveredTask.isBottom
+              ? "bottom-full border-b-gray-950"
               : "top-full border-t-gray-950"
           )} />
         </div>
@@ -1142,16 +791,16 @@ export default function AllTasksV2Page() {
 
       {/* Task Details Pop-up Modal */}
       {selectedTaskModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setSelectedTaskModal(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-[#e2e8f0] relative animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close button */}
-            <button 
+            <button
               onClick={() => setSelectedTaskModal(null)}
               className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
               title="ปิด"
@@ -1165,6 +814,7 @@ export default function AllTasksV2Page() {
                 "w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner",
                 selectedTaskModal.status === 'Checked' && "bg-emerald-100 text-emerald-700",
                 selectedTaskModal.status === 'WaitingTeacher' && "bg-[#eef3fc] text-[#597ecf]",
+                selectedTaskModal.status === 'WaitTooLong' && "bg-rose-100 text-rose-700",
                 selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-700",
                 selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-700"
               )}>
@@ -1172,6 +822,8 @@ export default function AllTasksV2Page() {
                   <CheckCircle2 className="w-6 h-6 text-emerald-600" />
                 ) : selectedTaskModal.status === 'WaitingTeacher' ? (
                   <Clock className="w-6 h-6 text-[#597ecf]" />
+                ) : selectedTaskModal.status === 'WaitTooLong' ? (
+                  <AlertTriangle className="w-6 h-6 text-rose-600" />
                 ) : selectedTaskModal.status === 'Overdue' ? (
                   <Flame className="w-6 h-6 text-rose-600" />
                 ) : (
@@ -1181,11 +833,9 @@ export default function AllTasksV2Page() {
               <div>
                 <span className={clsx(
                   "text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md border",
-                  selectedTaskModal.taskType === 'official' 
-                    ? "text-[#597ecf] bg-[#eef3fc] border-[#597ecf]/30" 
-                    : "text-[#57627a] bg-[#eff2f7] border-[#57627a]/30"
+                  "text-[#597ecf] bg-[#eef3fc] border-[#597ecf]/30"
                 )}>
-                  {selectedTaskModal.subject} • {selectedTaskModal.taskType === 'official' ? `ชิ้นที่ #${selectedTaskModal.seq}` : `งานส่วนตัวชิ้นที่ #${selectedTaskModal.seq}`}
+                  {selectedTaskModal.subject} • ชิ้นที่ #{selectedTaskModal.seq}
                 </span>
                 <h3 className="text-lg font-extrabold text-gray-900 mt-1">รายละเอียดงาน</h3>
               </div>
@@ -1195,17 +845,9 @@ export default function AllTasksV2Page() {
             <div className="bg-[#f4f7fa] rounded-2xl p-4 space-y-3 border border-[#e2e8f0] mb-5">
               <div>
                 <p className="text-xs text-gray-400 font-semibold mb-0.5">
-                  {selectedTaskModal.taskType === 'official' ? 'ชื่องานที่ครูสั่ง' : 'ชื่องาน / รายละเอียด'}
+                  ชื่องานที่ครูสั่ง
                 </p>
                 <p className="text-sm font-bold text-gray-900">{selectedTaskModal.taskName}</p>
-                {selectedTaskModal.originalPersonalName && selectedTaskModal.originalPersonalName !== selectedTaskModal.taskName && (
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <span className="text-[11px] font-semibold text-gray-400">ร่างเดิม:</span>
-                    <span className="text-xs font-medium text-gray-700 bg-white px-2 py-0.5 rounded-md border border-[#cbd3e0]">
-                      {selectedTaskModal.originalPersonalName}
-                    </span>
-                  </div>
-                )}
               </div>
 
               {selectedTaskModal.revisionCount && selectedTaskModal.revisionCount > 1 && (
@@ -1295,6 +937,7 @@ export default function AllTasksV2Page() {
                     "text-xs font-bold px-2.5 py-1 rounded-full",
                     selectedTaskModal.status === 'Checked' && "bg-emerald-100 text-emerald-800",
                     selectedTaskModal.status === 'WaitingTeacher' && "bg-[#eef3fc] text-[#597ecf]",
+                    selectedTaskModal.status === 'WaitTooLong' && "bg-rose-100 text-rose-800",
                     selectedTaskModal.status === 'Overdue' && "bg-rose-100 text-rose-800",
                     selectedTaskModal.status === 'New' && "bg-amber-100 text-amber-800"
                   )}>
@@ -1306,12 +949,14 @@ export default function AllTasksV2Page() {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              <Link
-                href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}&type=${selectedTaskModal.taskType}`}
-                className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
-              >
-                <BookOpen className="w-4 h-4" /> ไปหน้าการบ้านวิชานี้
-              </Link>
+              {selectedTaskModal.status !== 'Checked' && (
+                <Link
+                  href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}&task=${encodeURIComponent(selectedTaskModal.colId)}`}
+                  className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <BookOpen className="w-4 h-4" /> ไปที่งานนี้ในหน้างานค้าง
+                </Link>
+              )}
               <button
                 onClick={() => setSelectedTaskModal(null)}
                 className="px-4 py-3 bg-white hover:bg-gray-50 border border-[#e2e8f0] text-gray-700 font-semibold rounded-xl text-sm transition-colors cursor-pointer"

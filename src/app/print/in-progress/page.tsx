@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
+import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns } from '@/lib/db';
 import Link from 'next/link';
+import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { WAIT_ALERT_DAYS, isWaitingForTeacher, waitingDays, waitingSince } from '@/lib/homeworkRules';
 import { ArrowLeft, Printer, Filter, CheckSquare, FileText, Layers } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -10,7 +12,6 @@ export default function PrintInProgressPage() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [studentName, setStudentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<'all' | 'official' | 'personal'>('all');
   const [filterSubject, setFilterSubject] = useState<string>('All');
 
   useEffect(() => {
@@ -36,9 +37,13 @@ export default function PrintInProgressPage() {
 
   const loadData = async (name: string) => {
     try {
-      const allTasks = await getChildTasks(name);
-      // Filter only tasks that are 'Todo', 'Rework', or 'In Progress' (งานที่ยังไม่ทำ)
-      const filteredTasks = allTasks.filter(t => t.status === 'Todo' || t.status === 'Rework' || t.status === 'In Progress');
+      // ?demo=1 (เฉพาะตอน dev) = ข้อมูลสมมติ ไม่อ่าน/เขียน Firestore
+      const [allTasks, cols] = isHomeworkDemoUrl()
+        ? (() => { const d = getHomeworkDemo(name); return [d.tasks, d.cols] as const; })()
+        : await Promise.all([getChildTasks(name), getTeacherColumns(name)]);
+      // งานที่ยังไม่ทำ = ช่องในชีตครูที่ครูยังไม่ติ๊ก และเด็กยังไม่ได้กด "ทำเสร็จแล้ว" (เหมือนหน้างานค้างจากครู)
+      const uncheckedColIds = new Set(cols.filter(c => !c.is_checked).map(c => c.id));
+      const filteredTasks = allTasks.filter(t => !!t.teacher_column_id && uncheckedColIds.has(t.teacher_column_id) && !isWaitingForTeacher(t));
       setTasks(filteredTasks);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -49,18 +54,18 @@ export default function PrintInProgressPage() {
 
   const uniqueSubjects = useMemo(() => {
     const subs = new Set<string>();
-    tasks.forEach(t => { if (t.subject?.trim()) subs.add(t.subject.trim()); });
+    tasks.forEach(t => { if (t.teacher_column_id && t.subject?.trim()) subs.add(t.subject.trim()); });
     return Array.from(subs).sort();
   }, [tasks]);
 
   const displayedTasks = useMemo(() => {
     return tasks.filter(task => {
       if (filterSubject !== 'All' && task.subject !== filterSubject) return false;
-      if (filterType === 'official' && !task.teacher_column_id) return false;
-      if (filterType === 'personal' && task.teacher_column_id) return false;
+      // เฉพาะงานจากชีตครู (ไม่มีระบบงานส่วนตัวแล้ว)
+      if (!task.teacher_column_id) return false;
       return true;
     });
-  }, [tasks, filterType, filterSubject]);
+  }, [tasks, filterSubject]);
 
   // Group by subject directly
   const groupedTasks: Record<string, ChildTask[]> = useMemo(() => {
@@ -103,7 +108,7 @@ export default function PrintInProgressPage() {
           }
         }
       `}} />
-      
+
       {/* Non-print controls toolbar */}
       <div className="mb-6 print:hidden bg-white p-4 sm:p-5 rounded-2xl border border-[#e2e8f0] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -116,8 +121,8 @@ export default function PrintInProgressPage() {
             <div className="text-gray-500 text-xs hidden lg:block">
               💡 กดปุ่มพิมพ์ หรือกด <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">Ctrl</kbd> + <kbd className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">P</kbd>
             </div>
-            <button 
-              onClick={() => window.print()} 
+            <button
+              onClick={() => window.print()}
               className="flex items-center justify-center bg-[#597ecf] hover:bg-[#486cb8] text-white px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer active:scale-95 transition-all w-full sm:w-auto"
             >
               <Printer className="w-4 h-4 mr-1.5" />
@@ -128,49 +133,6 @@ export default function PrintInProgressPage() {
 
         {/* Filter Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#e2e8f0]">
-          {/* Segmented Filter: All / Official / Personal */}
-          <div className="flex items-center bg-[#eff2f7] p-1 rounded-xl border border-[#cbd3e0]">
-            <button
-              type="button"
-              onClick={() => setFilterType('all')}
-              className={clsx(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                filterType === 'all'
-                  ? "bg-white text-gray-900 shadow-xs"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>ทั้งหมด ({tasks.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterType('official')}
-              className={clsx(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                filterType === 'official'
-                  ? "bg-white text-[#597ecf] shadow-xs"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>เฉพาะชีตครู ({tasks.filter(t => !!t.teacher_column_id).length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterType('personal')}
-              className={clsx(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                filterType === 'personal'
-                  ? "bg-white text-[#57627a] shadow-xs"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>เฉพาะงานส่วนตัว ({tasks.filter(t => !t.teacher_column_id).length})</span>
-            </button>
-          </div>
-
           {/* Subject Filter */}
           <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[36px]">
             <Filter className="w-3.5 h-3.5 text-gray-400 mr-1.5 shrink-0" />
@@ -196,7 +158,7 @@ export default function PrintInProgressPage() {
           </h1>
           <div className="flex justify-between items-center text-xs text-gray-700 mt-1 font-medium px-1">
             <span>นักเรียน: <strong>{studentName}</strong></span>
-            <span>หมวด: <strong>{filterType === 'all' ? 'รวมทั้งหมด' : filterType === 'official' ? 'เฉพาะงานตามชีตครู' : 'เฉพาะงานส่วนตัว'}</strong></span>
+            <span>หมวด: <strong>งานตามชีตครู</strong></span>
             <span>วันที่พิมพ์: {new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
           </div>
         </div>
@@ -241,12 +203,6 @@ export default function PrintInProgressPage() {
                               </span>
                             ))}
 
-                            {/* Original Personal Draft if different */}
-                            {task.original_personal_name && task.original_personal_name !== task.task_name && (
-                              <div className="text-xs text-gray-600 mt-0.5 font-normal">
-                                <span>(เดิม: <em>{task.original_personal_name}</em>)</span>
-                              </div>
-                            )}
                           </div>
 
                           {/* Right: Due date if present */}

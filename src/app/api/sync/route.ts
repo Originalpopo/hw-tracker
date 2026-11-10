@@ -150,11 +150,7 @@ export async function POST(request: Request) {
           }
           // If teacher unchecked it and it was Verified
           else if (!col.is_checked && linkedTask.status === 'Verified') {
-            if (linkedTask.task_type === 'personal') {
-              updates.status = 'Submitted';
-            } else {
-              updates.status = 'Rework';
-            }
+            updates.status = 'Rework';
             needsUpdate = true;
           }
 
