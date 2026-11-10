@@ -121,15 +121,17 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
             <Link
               key={item.name}
               href={item.href}
+              aria-label={item.short}
+              title={item.short}
               className={clsx(
                 isActive ? 'text-[#597ecf]' : 'text-[#57627a] hover:text-[#000000]',
-                'flex flex-col items-center justify-center flex-1 min-w-0 px-0.5 py-2 text-[11px] font-bold transition-colors rounded-xl active:bg-gray-50'
+                'flex items-center justify-center flex-1 min-w-0 py-1.5 transition-colors rounded-xl active:bg-gray-50'
               )}
             >
-              <div className={clsx("p-1.5 rounded-full mb-0.5 transition-colors", isActive ? "bg-[#eef3fc]" : "")}>
-                <Icon className={clsx('w-5 h-5', isActive ? 'text-[#597ecf]' : 'text-gray-400')} />
+              {/* มือถือ: ไอคอนอย่างเดียว ไม่มีข้อความ */}
+              <div className={clsx("p-2.5 rounded-full transition-colors", isActive ? "bg-[#eef3fc]" : "")}>
+                <Icon className={clsx('w-6 h-6', isActive ? 'text-[#597ecf]' : 'text-gray-400')} />
               </div>
-              <span className={clsx("whitespace-nowrap leading-tight", isActive ? "opacity-100" : "opacity-80")}>{item.short}</span>
             </Link>
           );
         })}
