@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
 import {
   CheckSquare,
@@ -13,6 +13,7 @@ import {
   EyeOff,
   ListTodo,
   Columns3,
+  ChevronRight,
   Rows3,
   Clock,
   Flame,
@@ -311,6 +312,20 @@ export default function AllTasksV2Page() {
     });
   }, [officialSubjectStacks, hideCompleted]);
 
+  // แบบแนวตั้ง: บอกให้รู้ว่ายังมีวิชาซ่อนอยู่ทางขวา (จอแคบ เช่น มือถือ)
+  const verticalScrollRef = useRef<HTMLDivElement>(null);
+  const [hiddenRight, setHiddenRight] = useState(false);
+  useEffect(() => {
+    const el = verticalScrollRef.current;
+    if (!el) { setHiddenRight(false); return; }
+    const check = () => setHiddenRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', check); ro.disconnect(); };
+  }, [layoutMode, displayedOfficialStacks, loading]);
+
   const currentStats = officialStats;
 
   // Counts for toggle buttons
@@ -427,7 +442,7 @@ export default function AllTasksV2Page() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
 
       {/* Header section adhering to AGENTS.md standard */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
             <CheckSquare className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
@@ -438,13 +453,13 @@ export default function AllTasksV2Page() {
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-center gap-3 w-full xl:w-auto">
           {/* Layout Mode Switcher (Vertical vs Horizontal) */}
-          <div className="flex items-center bg-[#f4f7fa] p-1 rounded-xl border border-[#e2e8f0] shadow-2xs w-full sm:w-auto justify-center">
+          <div className="flex items-center bg-[#f4f7fa] p-1 rounded-xl border border-[#e2e8f0] shadow-2xs w-full sm:w-auto justify-center shrink-0">
             <button
               onClick={() => handleLayoutChange('vertical')}
               className={clsx(
-                "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer",
+                "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap",
                 layoutMode === 'vertical'
                   ? "bg-[#597ecf] text-white shadow-xs font-bold"
                   : "text-gray-600 hover:text-gray-900"
@@ -457,7 +472,7 @@ export default function AllTasksV2Page() {
             <button
               onClick={() => handleLayoutChange('horizontal')}
               className={clsx(
-                "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer",
+                "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap",
                 layoutMode === 'horizontal'
                   ? "bg-[#597ecf] text-white shadow-xs font-bold"
                   : "text-gray-600 hover:text-gray-900"
@@ -473,7 +488,7 @@ export default function AllTasksV2Page() {
           <button
             onClick={() => setHideCompleted(!hideCompleted)}
             className={clsx(
-              "h-[42px] px-4 rounded-xl text-sm font-semibold border flex items-center transition-all active:scale-95 w-full sm:w-auto justify-center cursor-pointer",
+              "h-[42px] px-4 rounded-xl text-sm font-semibold border flex items-center transition-all active:scale-95 w-full sm:w-auto justify-center cursor-pointer whitespace-nowrap shrink-0",
               hideCompleted
                 ? "bg-[#eef3fc] border-[#597ecf]/30 text-[#597ecf] shadow-xs font-bold"
                 : "bg-white border-[#e2e8f0] text-gray-700 hover:bg-[#f4f7fa] shadow-xs"
@@ -487,7 +502,7 @@ export default function AllTasksV2Page() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer whitespace-nowrap shrink-0"
             title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
           >
             <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
@@ -613,7 +628,8 @@ export default function AllTasksV2Page() {
           {/* MODE 1: VERTICAL LAYOUT (Subjects as Vertical Columns)   */}
           {/* ======================================================== */}
           {layoutMode === 'vertical' && (
-            <div className="overflow-x-auto pb-4 scrollbar-hover">
+            <div className="relative">
+            <div ref={verticalScrollRef} className="overflow-x-auto pb-4 scrollbar-hover">
               <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
 
                 {/* 1. Official Mode Vertical Columns */}
@@ -626,7 +642,7 @@ export default function AllTasksV2Page() {
                       className="w-[66px] sm:w-[76px] flex flex-col bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-1.5 shadow-2xs relative"
                     >
                       {/* Vertical Rotated Subject Header */}
-                      <div className="bg-white rounded-xl py-2.5 px-1 border border-[#e2e8f0] shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[175px] sm:h-[195px] relative overflow-hidden">
+                      <div className="bg-white rounded-xl py-2.5 px-1 border border-[#e2e8f0] shadow-2xs mb-2.5 text-center flex flex-col items-center justify-between h-[205px] sm:h-[225px] relative overflow-hidden">
                         <div className="z-10">
                           <span className={clsx(
                             "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none inline-block shadow-2xs",
@@ -636,9 +652,9 @@ export default function AllTasksV2Page() {
                           </span>
                         </div>
 
-                        <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[120px] sm:max-h-[140px] overflow-hidden px-0.5 pb-0.5">
+                        <div className="flex-1 flex flex-col justify-end items-center my-1 w-full max-h-[150px] sm:max-h-[170px] overflow-hidden px-0.5 pb-0.5">
                           <span
-                            className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[112px] sm:max-h-[130px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
+                            className="text-xs sm:text-sm font-black text-gray-800 select-none tracking-tight leading-tight [writing-mode:vertical-rl] rotate-180 max-h-[142px] sm:max-h-[160px] inline-block text-left overflow-hidden text-ellipsis whitespace-nowrap"
                             title={stack.subject}
                           >
                             {stack.subject}
@@ -686,6 +702,14 @@ export default function AllTasksV2Page() {
 
               </div>
             </div>
+            {hiddenRight && (
+              <div className="pointer-events-none absolute top-0 right-0 bottom-4 w-14 bg-gradient-to-l from-white via-white/80 to-transparent flex items-start justify-end pt-16">
+                <span className="flex items-center gap-0.5 bg-[#597ecf] text-white text-[11px] font-bold pl-2 pr-1 py-1 rounded-l-full shadow-sm">
+                  ปัด<ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </div>
+            )}
+            </div>
           )}
 
           {/* ======================================================== */}
@@ -704,9 +728,9 @@ export default function AllTasksV2Page() {
                     className="group/row flex flex-col md:flex-row items-stretch md:items-center bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-2.5 sm:p-3 shadow-2xs gap-3 relative"
                   >
                     {/* Horizontal Subject Info Card (Left) */}
-                    <div className="w-full md:w-[220px] shrink-0 bg-white rounded-xl p-3 border border-[#e2e8f0] shadow-2xs flex flex-row md:flex-col justify-between items-center md:items-start gap-2">
+                    <div className="w-full md:w-[220px] shrink-0 bg-white rounded-xl p-3 border border-[#e2e8f0] shadow-2xs flex flex-col justify-between items-start gap-2">
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-sm font-black text-gray-900 tracking-tight line-clamp-1" title={stack.subject}>
+                        <span className="text-sm font-black text-gray-900 tracking-tight line-clamp-2 min-w-0" title={stack.subject}>
                           {stack.subject}
                         </span>
                         <span className={clsx(

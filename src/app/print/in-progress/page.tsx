@@ -134,12 +134,12 @@ export default function PrintInProgressPage() {
         {/* Filter Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#e2e8f0]">
           {/* Subject Filter */}
-          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[36px]">
+          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[42px]">
             <Filter className="w-3.5 h-3.5 text-gray-400 mr-1.5 shrink-0" />
             <select
               value={filterSubject}
               onChange={(e) => setFilterSubject(e.target.value)}
-              className="text-xs border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-semibold cursor-pointer"
+              className="h-full text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-semibold cursor-pointer"
             >
               <option value="All">ทุกวิชา</option>
               {uniqueSubjects.map(sub => (

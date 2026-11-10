@@ -329,7 +329,7 @@ function HomeworkDashboard() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
 
       {/* Header section adhering to AGENTS.md Standard Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
             <BookOpen className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
@@ -338,11 +338,11 @@ function HomeworkDashboard() {
           <p className="text-gray-500 mt-1 text-sm sm:text-base">งานที่ครูยังไม่ได้ติ๊กในชีตของ {studentName} ทำเสร็จแล้วกด &quot;ทำเสร็จแล้ว&quot; งานจะไปรอครูติ๊ก ถ้าเกิน {WAIT_ALERT_DAYS} วันครูยังไม่ติ๊กจะขึ้นเตือน</p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto lg:shrink-0">
           <button
             onClick={handleSyncFromTeacher}
             disabled={syncing}
-            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer whitespace-nowrap shrink-0"
             title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
           >
             <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
@@ -371,12 +371,12 @@ function HomeworkDashboard() {
 
         {/* Subject Filter Dropdown */}
         {tasks.length > 0 && (
-          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[38px] w-full md:w-auto self-stretch md:self-auto">
+          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[42px] w-full md:w-auto self-stretch md:self-auto">
             <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
             <select
               value={uniqueSubjects.includes(filterSubject) ? filterSubject : 'All'}
               onChange={(e) => setFilterSubject(e.target.value)}
-              className="text-xs sm:text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full cursor-pointer"
+              className="h-full text-xs sm:text-sm border-none outline-none focus:ring-0 bg-transparent text-gray-700 font-medium w-full cursor-pointer"
             >
               <option key="filter-all" value="All">ทุกวิชา</option>
               {uniqueSubjects.map(sub => (
@@ -483,7 +483,7 @@ function HomeworkDashboard() {
                       </span>
                       <button
                         onClick={() => handleUpdateStatus(task.id!, 'Rework')}
-                        className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-2xs shrink-0"
+                        className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-3 min-h-[36px] rounded-lg font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-all active:scale-95 shadow-2xs shrink-0"
                         title="ครูให้กลับมาแก้ไขใหม่ ดีดกลับไปช่องยังไม่ทำ"
                       >
                         <RotateCcw className="w-3 h-3 text-rose-500" /> ครูให้แก้ไข
@@ -575,7 +575,7 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
       )}
     >
       {task.status === 'Rework' && (
-        <div className="absolute top-0 right-0 bg-rose-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-bl-xl z-10 shadow-xs flex items-center gap-1">
+        <div className="absolute top-0 right-0 bg-rose-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-bl-xl z-10 shadow-xs pointer-events-none flex items-center gap-1">
           <AlertTriangle className="w-3 h-3" /> ต้องแก้!
         </div>
       )}
@@ -606,11 +606,11 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
         </div>
 
         {!isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white pl-1">
+          <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity bg-white pl-1">
             {onUndo && (
               <button
                 onClick={() => onUndo(task)}
-                className="text-gray-400 hover:text-orange-600 p-1 rounded-lg hover:bg-orange-50 cursor-pointer transition-colors"
+                className="text-gray-400 hover:text-orange-600 p-2.5 -m-1.5 rounded-lg hover:bg-orange-50 cursor-pointer transition-colors"
                 title="ดึงกลับมา"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -625,7 +625,7 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
                 setEditNote(task.note || '');
                 setEditTags(task.tags || []);
               }}
-              className="text-gray-400 hover:text-[#597ecf] p-1 rounded-lg hover:bg-[#eef3fc] cursor-pointer transition-colors"
+              className="text-gray-400 hover:text-[#597ecf] p-2.5 -m-1.5 rounded-lg hover:bg-[#eef3fc] cursor-pointer transition-colors"
               title="แก้ไขรายละเอียด"
             >
               <Edit2 className="w-3.5 h-3.5" />

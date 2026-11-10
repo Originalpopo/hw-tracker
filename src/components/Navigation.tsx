@@ -19,11 +19,11 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
   }, [pathname]); // Re-check on navigation
 
   const navItems = [
-    { name: 'ภาพรวม (Dashboard)', href: '/', icon: Home },
-    { name: 'งานทั้งหมด (All Tasks)', href: '/all-tasks', icon: CheckSquare },
-    { name: 'งานค้างจากครู (Pending)', href: '/homework', icon: BookOpen },
-    { name: 'พิมพ์ใบงาน (Print)', href: '/print', icon: Printer },
-    { name: 'ตั้งค่า (Settings)', href: '/settings', icon: Settings },
+    { name: 'ภาพรวม (Dashboard)', short: 'ภาพรวม', href: '/', icon: Home },
+    { name: 'งานทั้งหมด (All Tasks)', short: 'งานทั้งหมด', href: '/all-tasks', icon: CheckSquare },
+    { name: 'งานค้างจากครู (Pending)', short: 'งานค้าง', href: '/homework', icon: BookOpen },
+    { name: 'พิมพ์ใบงาน (Print)', short: 'พิมพ์ใบงาน', href: '/print', icon: Printer },
+    { name: 'ตั้งค่า (Settings)', short: 'ตั้งค่า', href: '/settings', icon: Settings },
   ];
 
   return (
@@ -123,13 +123,13 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
               href={item.href}
               className={clsx(
                 isActive ? 'text-[#597ecf]' : 'text-[#57627a] hover:text-[#000000]',
-                'flex flex-col items-center justify-center w-full p-2 text-[10px] font-bold transition-colors rounded-xl active:bg-gray-50'
+                'flex flex-col items-center justify-center flex-1 min-w-0 px-0.5 py-2 text-[11px] font-bold transition-colors rounded-xl active:bg-gray-50'
               )}
             >
               <div className={clsx("p-1.5 rounded-full mb-0.5 transition-colors", isActive ? "bg-[#eef3fc]" : "")}>
                 <Icon className={clsx('w-5 h-5', isActive ? 'text-[#597ecf]' : 'text-gray-400')} />
               </div>
-              <span className={clsx(isActive ? "opacity-100" : "opacity-80")}>{item.name.split(' ')[0]}</span>
+              <span className={clsx("whitespace-nowrap leading-tight", isActive ? "opacity-100" : "opacity-80")}>{item.short}</span>
             </Link>
           );
         })}
