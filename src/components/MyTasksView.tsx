@@ -25,7 +25,8 @@ const BADGE_TONE: Record<DueTone, string> = {
 type FormState = { subject: string; kind: MyTaskKind; detail: string; assigned_date: string; due_date: string };
 
 // ปุ่ม "เพิ่มงาน" อยู่ในหัวหน้า (นอกคอมโพเนนต์นี้) - กดแล้วส่งเลข addRequest ใหม่มา = เปิดฟอร์มเพิ่มงาน
-export default function MyTasksView({ studentName, subjects, filterSubject, onFilterSubject, demo, addRequest }: {
+export default function MyTasksView({ studentName, subjects, filterSubject, onFilterSubject, demo, addRequest, switcher }: {
+  switcher: React.ReactNode; // ปุ่มสลับ งานค้างจากครู / งานของฉัน (มาจากหน้าหลัก วางซ้ายในแถบเครื่องมือ)
   studentName: string;
   subjects: string[];
   filterSubject: string;
@@ -184,9 +185,12 @@ export default function MyTasksView({ studentName, subjects, filterSubject, onFi
 
   return (
     <>
-      {/* แถบเครื่องมือ: ตัวเลขสรุป + ตัวกรองวิชา + ปุ่มเพิ่มงาน */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div className="grid grid-cols-3 gap-2 md:w-[380px]">
+      {/* แถบเครื่องมือ: ปุ่มสลับ (ซ้าย) / ตัวเลขสรุป (กลาง) / ตัวกรองวิชา (ขวา) - กล่องแคบจะเรียงลงมา */}
+      <div className="@container bg-white p-3 sm:p-4 rounded-2xl shadow-xs border border-[#e2e8f0]">
+      <div className="flex flex-col gap-3 @4xl:flex-row @4xl:items-center">
+        <div className="@4xl:w-[260px] shrink-0">{switcher}</div>
+        <div className="flex-1 flex justify-center min-w-0">
+        <div className="grid grid-cols-3 gap-2 w-full @4xl:w-[360px]">
           <div className="bg-rose-50 rounded-xl px-2 py-2.5 text-center">
             <div className="text-2xl font-extrabold text-rose-700 leading-tight">{summary.overdue}</div>
             <div className="text-[11px] sm:text-xs font-semibold text-rose-800">เลยกำหนด</div>
@@ -200,8 +204,9 @@ export default function MyTasksView({ studentName, subjects, filterSubject, onFi
             <div className="text-[11px] sm:text-xs font-semibold text-[#3b5a9e]">ยังไม่ทำ</div>
           </div>
         </div>
-        <div className="flex gap-2 w-full md:w-auto">
-          <label className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-11 flex-1 md:w-64 md:flex-none">
+        </div>
+        <div className="@4xl:w-[220px] shrink-0">
+          <label className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-11 w-full">
             <span className="sr-only">กรองวิชา</span>
             <select
               value={filterSubject === 'All' || subjectOptions.includes(filterSubject) ? filterSubject : 'All'}
@@ -213,6 +218,7 @@ export default function MyTasksView({ studentName, subjects, filterSubject, onFi
             </select>
           </label>
         </div>
+      </div>
       </div>
 
       {/* ฟอร์มเพิ่ม / แก้ไขงาน */}
@@ -337,13 +343,13 @@ export default function MyTasksView({ studentName, subjects, filterSubject, onFi
             {done.length === 0 && <Empty text="ยังไม่มีงานที่ทำเสร็จ" />}
             {donePageItems.map(t => (
               <Card key={t.id} task={t} badge={null} actions={null}>
-                <div className="mt-3 flex items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="mt-3 h-12 flex items-center justify-between gap-2 px-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
                   <span className="text-xs font-bold text-emerald-800">ทำเสร็จ {t.done_at ? thaiShortDate(localDateStr(new Date(t.done_at))) : ''}</span>
                   <button
                     type="button"
                     onClick={() => sendBack(t)}
                     title="ครูให้แก้ไข งานจะกลับไปช่องยังไม่ทำ"
-                    className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-3 min-h-[40px] rounded-lg font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-all active:scale-95 shadow-2xs shrink-0"
+                    className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-3 h-9 rounded-lg font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-all active:scale-95 shadow-2xs shrink-0"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-rose-500" /> ครูให้แก้ไข
                   </button>

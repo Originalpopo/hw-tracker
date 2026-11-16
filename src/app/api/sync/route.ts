@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent, getSheetKey, teacherColumnIdPrefix } from '@/lib/googleSheets';
-import { replaceTeacherColumnsForStudent, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
+import { replaceTeacherColumnsForStudent, saveSheetSubjects, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import type { TeacherColumn } from '@/lib/db';
 
 export async function POST(request: Request) {
@@ -61,12 +61,14 @@ export async function POST(request: Request) {
     }
 
     // Phase 2: Extract columns using the determined subject
+    const sheetSubjects: string[] = [];
     for (const sheet of fetchedSheets) {
       let finalSubject = sheet.tabName;
       // If A1 is not empty and is unique across all synced tabs, use A1 as the subject
       if (sheet.a1 && a1Counts[sheet.a1] === 1) {
         finalSubject = sheet.a1;
       }
+      sheetSubjects.push(finalSubject.trim());
       const { tasks: cols, match, reason } = extractTeacherTasksForStudent(sheet.data, studentName, finalSubject, rollNumber, getSheetKey(sheet.url));
       allTeacherCols.push(...cols);
       if (reason !== 'ok') keepOldSheetUrls.add(sheet.url);
@@ -82,6 +84,18 @@ export async function POST(request: Request) {
       } else if (match.isFuzzy) {
         failedSheets.push({ url: sheet.url, error: `ชีทวิชา "${finalSubject}" มีชื่อสะกดต่างจากที่ตั้งไว้เล็กน้อย: ครูเขียนว่า "${match.matchedName}" (ระบบจับคู่ให้อัตโนมัติ) - ควรแจ้งครูให้แก้ให้ตรงกับ "${studentName}"` });
       }
+    }
+
+    // จำชื่อวิชาของทุกแท็บ (รวมวิชาที่ครูยังไม่สั่งงาน) ไว้เป็นตัวเลือกวิชาในหน้างานของฉัน
+    // แท็บไหนดึงไม่สำเร็จ ไม่รู้ชื่อ -> เก็บรายชื่อเดิมไว้รวมด้วย จะได้ไม่หายไป
+    try {
+      const names = new Set(sheetSubjects.filter(Boolean));
+      if (keepOldSheetUrls.size > 0 && Array.isArray(globalSettings?.sheet_subjects)) {
+        globalSettings!.sheet_subjects!.forEach(n => names.add(n));
+      }
+      if (names.size > 0) await saveSheetSubjects(Array.from(names).sort((a, b) => a.localeCompare(b, 'th')));
+    } catch (e) {
+      console.error('Error saving sheet subjects:', e);
     }
 
     // Fetch existing columns to preserve first_seen_at

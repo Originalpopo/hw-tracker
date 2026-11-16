@@ -252,6 +252,13 @@ export interface AppSettings {
   sheet_urls: string;
   app_pin?: string;
   app_pin_hint?: string;
+  /** ชื่อวิชาของทุกแท็บในชีตครู (รวมวิชาที่ยังไม่มีงาน) - บันทึกตอนดึงข้อมูลจากครู ใช้เป็นตัวเลือกวิชาในงานของฉัน */
+  sheet_subjects?: string[];
+}
+
+/** บันทึกเฉพาะรายชื่อวิชา (ไม่แตะการตั้งค่าอื่น) */
+export async function saveSheetSubjects(subjects: string[]) {
+  await setDoc(doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC), { sheet_subjects: subjects }, { merge: true });
 }
 
 export async function getGlobalSettings(): Promise<AppSettings | null> {

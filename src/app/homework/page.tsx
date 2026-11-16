@@ -45,6 +45,8 @@ function HomeworkDashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
+  // ชื่อวิชาของทุกแท็บในชีตครู (บันทึกไว้ตอนกดอัปเดตข้อมูลจากครู) - รวมวิชาที่ยังไม่มีงาน
+  const [sheetSubjects, setSheetSubjects] = useState<string[]>([]);
 
   // Filter states (ใช้ร่วมกันทั้งสองแบบ: งานค้างจากครู / งานของฉัน)
   const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
@@ -54,6 +56,27 @@ function HomeworkDashboard() {
   useEffect(() => {
     setView(searchParams.get('view') === 'mine' ? 'mine' : 'teacher');
   }, [searchParams]);
+  // ปุ่มสลับ งานค้างจากครู / งานของฉัน (สองอย่างแยกกันขาด ไม่ปนข้อมูลกัน) - วางไว้ซ้ายในแถบเครื่องมือของทั้งสองแบบ
+  const viewSwitch = (
+    <div role="tablist" aria-label="เลือกประเภทงาน" className="grid grid-cols-2 gap-1 p-1 bg-[#f4f7fa] rounded-xl border border-[#e2e8f0]">
+      {([['teacher', 'งานค้างจากครู'], ['mine', 'งานของฉัน']] as const).map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={view === v}
+          onClick={() => switchView(v)}
+          className={clsx(
+            "h-11 px-2 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap",
+            view === v ? "bg-[#597ecf] text-white shadow-xs" : "text-[#57627a] hover:bg-white"
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   // กดปุ่ม "เพิ่มงาน" ที่หัวหน้า -> เพิ่มเลขนี้ -> MyTasksView เปิดฟอร์ม
   const [addRequest, setAddRequest] = useState(0);
   const switchView = (v: 'teacher' | 'mine') => {
@@ -109,6 +132,7 @@ function HomeworkDashboard() {
       if (globalSettings) {
         savedName = globalSettings.student_name || savedName;
         savedUrlsStr = globalSettings.sheet_urls || savedUrlsStr;
+        if (Array.isArray(globalSettings.sheet_subjects)) setSheetSubjects(globalSettings.sheet_subjects);
         if (savedName) localStorage.setItem('hw_student_name', savedName);
         if (savedUrlsStr) localStorage.setItem('hw_sheet_urls', savedUrlsStr);
       }
@@ -176,6 +200,9 @@ function HomeworkDashboard() {
       });
       if (res.ok) {
         await loadTasks(studentName);
+        // รายชื่อวิชาทุกแท็บเพิ่งถูกบันทึกใหม่ตอนดึงข้อมูล
+        const gs = await getGlobalSettings();
+        if (Array.isArray(gs?.sheet_subjects)) setSheetSubjects(gs!.sheet_subjects!);
       } else {
         alert('เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheet');
       }
@@ -269,6 +296,13 @@ function HomeworkDashboard() {
 
 
   const uniqueSubjects = teacherSubjects;
+
+  // ตัวเลือกวิชาของงานของฉัน: ทุกวิชาในชีตครู (ไม่ใช่เฉพาะวิชาที่ครูสั่งงานแล้ว)
+  // ยังไม่เคยบันทึกรายชื่อ (ยังไม่ได้กดอัปเดตหลังเพิ่มฟีเจอร์นี้) -> ใช้รายชื่อสำรองไปก่อน
+  const allSheetSubjects = useMemo(() => {
+    const set = new Set<string>([...(sheetSubjects.length > 0 ? sheetSubjects : FALLBACK_TEACHER_SUBJECTS), ...teacherSubjects]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+  }, [sheetSubjects, teacherSubjects]);
 
   // Safety synchronization: if current filterSubject is not in uniqueSubjects, reset to 'All'
   useEffect(() => {
@@ -403,33 +437,16 @@ function HomeworkDashboard() {
         </button>}
       </div>
 
-      {/* สลับ งานค้างจากครู / งานของฉัน (สองอย่างแยกกันขาด ไม่ปนข้อมูลกัน) */}
-      <div role="tablist" aria-label="เลือกประเภทงาน" className="grid grid-cols-2 gap-1 p-1 bg-white rounded-2xl border border-[#e2e8f0] shadow-xs sm:w-[420px]">
-        {([['teacher', 'งานค้างจากครู'], ['mine', 'งานของฉัน']] as const).map(([v, label]) => (
-          <button
-            key={v}
-            type="button"
-            role="tab"
-            aria-selected={view === v}
-            onClick={() => switchView(v)}
-            className={clsx(
-              "h-11 rounded-xl text-sm font-bold transition-all cursor-pointer",
-              view === v ? "bg-[#597ecf] text-white shadow-xs" : "text-[#57627a] hover:bg-[#f4f7fa]"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       {view === 'mine' ? (
-        <MyTasksView studentName={studentName} subjects={uniqueSubjects} filterSubject={filterSubject} onFilterSubject={setFilterSubject} demo={demo} addRequest={addRequest} />
+        <MyTasksView studentName={studentName} subjects={allSheetSubjects} filterSubject={filterSubject} onFilterSubject={setFilterSubject} demo={demo} addRequest={addRequest} switcher={viewSwitch} />
       ) : (<>
-      {/* Filter Toolbar Card */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-2 w-full md:w-auto">
+      {/* แถบเครื่องมือ: ปุ่มสลับ (ซ้าย) / ตัวเลขสรุป (กลาง) / ตัวกรองวิชา (ขวา) - กล่องแคบจะเรียงลงมา */}
+      <div className="@container bg-white p-3 sm:p-4 rounded-2xl shadow-xs border border-[#e2e8f0]">
+      <div className="flex flex-col gap-3 @4xl:flex-row @4xl:items-center">
+        <div className="@4xl:w-[260px] shrink-0">{viewSwitch}</div>
+        <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
           {/* ตัวเลขสรุป 3 ช่อง (นับตามวิชาที่เลือกอยู่) */}
-          <div className="grid grid-cols-3 gap-2 md:w-[380px]">
+          <div className="grid grid-cols-3 gap-2 w-full @4xl:w-[360px]">
             <div className="bg-rose-50 rounded-xl px-2 py-2.5 text-center">
               <div className="text-2xl font-extrabold text-rose-700 leading-tight">{summary.overdue}</div>
               <div className="text-[11px] sm:text-xs font-semibold text-rose-800">เลยกำหนด</div>
@@ -444,7 +461,7 @@ function HomeworkDashboard() {
             </div>
           </div>
           {countWaitTooLong > 0 && (
-            <span className="px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200">
+            <span className="px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 w-full @4xl:w-[360px] justify-center">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               รออัปเดตเกิน {WAIT_ALERT_DAYS} วัน: {countWaitTooLong}
             </span>
@@ -452,8 +469,9 @@ function HomeworkDashboard() {
         </div>
 
         {/* Subject Filter Dropdown */}
+        <div className="@4xl:w-[220px] shrink-0">
         {tasks.length > 0 && (
-          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-[42px] w-full md:w-auto self-stretch md:self-auto">
+          <div className="flex items-center bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl px-3 h-11 w-full">
             <Filter className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
             <select
               value={uniqueSubjects.includes(filterSubject) ? filterSubject : 'All'}
@@ -467,6 +485,8 @@ function HomeworkDashboard() {
             </select>
           </div>
         )}
+        </div>
+      </div>
       </div>
 
       {loading ? (
@@ -553,27 +573,28 @@ function HomeworkDashboard() {
                   onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}
                   badge={{ label: days === 0 ? 'รอวันนี้' : `รอ ${days} วัน`, tone: tooLong ? 'overdue' : 'later' }}
                 >
-                  <div className="mt-3 mb-1">
+                  {/* สูง h-12 เท่าปุ่ม "ทำเสร็จแล้ว" ของการ์ดฝั่งยังไม่ทำ - การ์ดสองคอลัมน์จะได้สูงเท่ากัน */}
+                  <div className="mt-3">
                     <div className={clsx(
-                      "flex items-center justify-between gap-2 p-2.5 rounded-xl border",
+                      "h-12 flex items-center justify-between gap-2 px-2.5 rounded-xl border",
                       tooLong ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"
                     )}>
-                      <span className={clsx("text-xs font-bold flex items-start gap-1.5", tooLong ? "text-rose-800" : "text-amber-800")}>
+                      <span className={clsx("text-xs font-bold flex items-center gap-1.5 min-w-0", tooLong ? "text-rose-800" : "text-amber-800")}>
                         {tooLong
                           ? <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                           : <Clock className="w-4 h-4 text-amber-600 shrink-0" />}
                         {tooLong ? (
-                          <span>
-                            รออัปเดตมา {days} วันแล้ว
-                            <span className="block font-medium text-rose-700">ตามงานกับครู อาจยังไม่ได้ส่ง หรือต้องแก้ไข</span>
+                          <span className="min-w-0 leading-tight" title="ตามงานกับครู อาจยังไม่ได้ส่ง หรือต้องแก้ไข">
+                            <span className="block truncate">รออัปเดตมา {days} วันแล้ว</span>
+                            <span className="block truncate font-medium text-[11px] text-rose-700">ตามงานกับครู อาจยังไม่ได้ส่ง หรือต้องแก้ไข</span>
                           </span>
                         ) : (
-                          <span>รออัปเดต · ทำเสร็จ{days === 0 ? 'วันนี้' : ` ${days} วันที่แล้ว`}</span>
+                          <span className="truncate">รออัปเดต · ทำเสร็จ{days === 0 ? 'วันนี้' : ` ${days} วันที่แล้ว`}</span>
                         )}
                       </span>
                       <button
                         onClick={() => handleUpdateStatus(task.id!, 'Rework')}
-                        className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-3 min-h-[36px] rounded-lg font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-all active:scale-95 shadow-2xs shrink-0"
+                        className="text-xs text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-3 h-9 rounded-lg font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-all active:scale-95 shadow-2xs shrink-0"
                         title="ครูให้กลับมาแก้ไขใหม่ ดีดกลับไปช่องยังไม่ทำ"
                       >
                         <RotateCcw className="w-3 h-3 text-rose-500" /> ครูให้แก้ไข
@@ -672,7 +693,7 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted, badge }: 
           : "border-[#e2e8f0]"
       )}
     >
-      <div className="flex justify-between items-start mb-2.5 gap-1">
+      <div className="flex justify-between items-center min-h-8 mb-2.5 gap-1">
         <div className="flex items-center gap-1.5 flex-wrap">
           {task.status === 'Rework' && (
             <span className="text-[10px] font-extrabold text-white bg-rose-600 px-2 py-0.5 rounded-md flex items-center gap-1">
