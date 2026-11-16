@@ -21,7 +21,7 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
   const navItems = [
     { name: 'ภาพรวม (Dashboard)', short: 'ภาพรวม', href: '/', icon: Home },
     { name: 'งานทั้งหมด (All Tasks)', short: 'งานทั้งหมด', href: '/all-tasks', icon: CheckSquare },
-    { name: 'งานค้างจากครู (Pending)', short: 'งานค้าง', href: '/homework', icon: BookOpen },
+    { name: 'งานของฉัน (My Work)', short: 'งานของฉัน', href: '/homework', icon: BookOpen },
     { name: 'พิมพ์ใบงาน (Print)', short: 'พิมพ์ใบงาน', href: '/print', icon: Printer },
     { name: 'ตั้งค่า (Settings)', short: 'ตั้งค่า', href: '/settings', icon: Settings },
   ];

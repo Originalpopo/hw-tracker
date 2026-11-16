@@ -1,6 +1,6 @@
 // ข้อมูลสมมติสำหรับทดสอบหน้าเว็บ (เติม ?demo=1 ท้ายลิงก์ของหน้า ภาพรวม / งานทั้งหมด / งานค้างจากครู)
 // ใช้ได้เฉพาะตอนรัน dev บนเครื่อง (npm run dev) และไม่เขียนลง Firestore เลย
-import { ChildTask, TaskStatus, TeacherColumn } from './db';
+import { ChildTask, MyTask, TaskStatus, TeacherColumn } from './db';
 
 export function isHomeworkDemo(params: { get(name: string): string | null }): boolean {
   return process.env.NODE_ENV === 'development' && params.get('demo') === '1';
@@ -21,14 +21,14 @@ const DAY = 24 * 60 * 60 * 1000;
 const ROWS: [string, string, boolean, TaskStatus | null, number?][] = [
   ['คณิตศาสตร์+เพิ่มเติม', 'แบบฝึกหัด 6.1 (ครูติ๊กแล้ว - ต้องไม่โผล่ในงานค้าง)', true, 'Verified'],
   ['คณิตศาสตร์+เพิ่มเติม', 'แบบฝึกหัด 6.2 (ยังไม่ทำ)', false, 'Todo'],
-  ['คณิตศาสตร์+เพิ่มเติม', 'แบบฝึกหัด 6.3 (ทำเสร็จวันนี้ รอครูติ๊ก)', false, 'Submitted', 0],
+  ['คณิตศาสตร์+เพิ่มเติม', 'แบบฝึกหัด 6.3 (ทำเสร็จวันนี้ รออัปเดต)', false, 'Submitted', 0],
   ['คณิตศาสตร์+เพิ่มเติม', 'แบบฝึกหัด 6.4 (ทำเสร็จ 10 วันแล้ว ครูยังไม่ติ๊ก - ต้องเตือน)', false, 'Submitted', 10],
   ['ภาษาไทย', 'ใบงานคำควบกล้ำ (ครูให้แก้ไข)', false, 'Rework'],
   ['ภาษาไทย', 'เรียงความบ้านของฉัน (ยังไม่ทำ)', false, 'Todo'],
   ['ภาษาอังกฤษ', 'Workbook p.14 (ฝั่งลูกค้างสถานะ Verified แต่ครูยังไม่ติ๊ก - ต้องอยู่ช่องยังไม่ทำ)', false, 'Verified'],
   ['ภาษาอังกฤษ', 'Workbook p.15 (ส่งแล้ว ครูติ๊กแล้ว - ต้องไม่โผล่ในงานค้าง)', true, 'Submitted', 2],
   ['ทักษะภาษาจีน', '练习本 แบบฝึกหัด หน้าที่ 38 (ยังไม่ทำ)', false, 'Todo'],
-  ['ทักษะภาษาจีน', '练习本 แบบฝึกหัด หน้าที่ 39 (ทำเสร็จ 3 วันแล้ว รอครูติ๊ก)', false, 'Submitted', 3],
+  ['ทักษะภาษาจีน', '练习本 แบบฝึกหัด หน้าที่ 39 (ทำเสร็จ 3 วันแล้ว รออัปเดต)', false, 'Submitted', 3],
   ['วิทยาศาสตร์', 'สมุดบันทึกการทดลอง (สถานะ "ทำเสร็จ รอส่ง" จากระบบเดิม 8 วัน - ต้องเตือน)', false, 'Done', 8],
 ];
 
@@ -63,4 +63,38 @@ export function getHomeworkDemo(studentName: string): { cols: TeacherColumn[]; t
   // งานที่ครูลบช่องออกจากชีทไปแล้ว (ไม่มีคอลัมน์ในชีท) - ต้องไม่โผล่
   tasks.push({ id: 'demo_task_orphan', subject: 'สังคมฯ', task_name: 'งานเก่าที่ครูลบช่องไปแล้ว (ต้องไม่โผล่)', status: 'Todo', created_at: now, updated_at: now, teacher_column_id: 'demo_col_deleted', student_name: studentName, task_type: 'official' });
   return { cols, tasks };
+}
+
+/**
+ * "งานของฉัน" สมมติ: [วิชา, ชนิด, รายละเอียด, สั่งกี่วันก่อน, ส่งอีกกี่วัน (null = ไม่มี), ทำเสร็จกี่วันก่อน (null = ยังไม่ทำ), ครูให้แก้กี่ครั้ง]
+ * มีงานทำเสร็จแล้ว 12 ชิ้น เพื่อให้เห็นการแบ่งหน้า (หน้าละ 10)
+ */
+const MY_ROWS: [string, MyTask['kind'], string, number, number | null, number | null, number?][] = [
+  ['คณิตศาสตร์+เพิ่มเติม', 'homework', 'โจทย์ปัญหาการหาร หน้า 52 ข้อ 1-10', 5, -2, null],
+  ['ภาษาไทย', 'in_class', 'คัดลายมือ บทที่ 4 ให้เสร็จ', 1, 0, null, 1],
+  ['ภาษาอังกฤษ', 'homework', 'ท่องคำศัพท์ Unit 5 (20 คำ)', 2, 1, null],
+  ['วิทยาศาสตร์', 'homework', 'วาดวงจรไฟฟ้าอย่างง่ายลงสมุด', 0, 4, null],
+  ['สังคมฯ', 'in_class', 'สรุปเรื่องหน้าที่ของเงิน', 0, null, null],
+  ...Array.from({ length: 12 }, (_, i): [string, MyTask['kind'], string, number, number | null, number | null] =>
+    [['คณิตศาสตร์+เพิ่มเติม', 'ภาษาไทย', 'ภาษาอังกฤษ', 'วิทยาศาสตร์'][i % 4], i % 3 === 0 ? 'in_class' : 'homework', `งานที่ทำเสร็จแล้ว ชิ้นที่ ${i + 1}`, 20 - i, null, 14 - i]),
+];
+
+export function getMyTasksDemo(studentName: string): MyTask[] {
+  const now = Date.now();
+  const toDate = (daysFromToday: number) => {
+    const d = new Date(now + daysFromToday * DAY);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  return MY_ROWS.map(([subject, kind, detail, assignedAgo, dueIn, doneAgo, rework], i) => ({
+    id: `demo_my_${i}`,
+    student_name: studentName,
+    subject, kind, detail,
+    assigned_date: toDate(-assignedAgo),
+    ...(dueIn === null ? {} : { due_date: toDate(dueIn) }),
+    status: doneAgo === null ? 'todo' : 'done',
+    done_at: doneAgo === null ? null : now - doneAgo * DAY,
+    rework_count: rework || 0,
+    created_at: now - assignedAgo * DAY,
+    updated_at: now,
+  }));
 }

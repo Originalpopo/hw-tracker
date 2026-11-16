@@ -15,7 +15,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-const COLLECTIONS = ["hw_child_tasks", "hw_teacher_columns", "app_settings"];
+const COLLECTIONS = ["hw_child_tasks", "hw_teacher_columns", "hw_my_tasks", "app_settings"];
 
 async function runBackup() {
   console.log("🚀 Starting Firestore Backup for HW Tracker...");

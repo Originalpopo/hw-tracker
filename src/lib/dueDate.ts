@@ -12,6 +12,11 @@ function parseDue(due: string | undefined | null): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/** วันที่ตามเวลาเครื่องเป็น 'YYYY-MM-DD' (ไม่ใช้ toISOString ที่เป็นเวลา UTC) */
+export function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** อีกกี่วันถึงกำหนดส่ง (0 = วันนี้, ติดลบ = เลยมาแล้ว) หรือ null ถ้าไม่มี/อ่านวันที่ไม่ได้ */
 export function daysUntilDue(due: string | undefined | null, now = new Date()): number | null {
   const d = parseDue(due);

@@ -57,9 +57,53 @@ export interface TeacherColumn {
   first_seen_at?: number; // Timestamp of when the task was first seen
 }
 
+/**
+ * "งานของฉัน" - งานรายวันที่บันทึกเอง แยกขาดจากงานในชีตครู (คนละ collection)
+ * การดึงข้อมูลจากชีตครูไม่แตะ collection นี้เลย
+ */
+export type MyTaskKind = 'in_class' | 'homework';
+export interface MyTask {
+  id?: string;
+  student_name: string;
+  subject: string;
+  kind: MyTaskKind; // งานในคาบ / การบ้าน
+  detail: string; // รายละเอียดงาน
+  assigned_date: string; // วันที่สั่ง YYYY-MM-DD
+  due_date?: string; // กำหนดส่ง YYYY-MM-DD (ไม่บังคับ)
+  status: 'todo' | 'done';
+  done_at?: number | null; // ms - กด "ทำเสร็จแล้ว" ครั้งล่าสุด (ใช้เรียงคอลัมน์ทำเสร็จแล้ว)
+  rework_count?: number; // ครูให้แก้ไขกี่ครั้ง
+  created_at?: number; // ms
+  updated_at?: number; // ms
+}
+
 // --- Collections ---
 const CHILD_TASKS_COLLECTION = "hw_child_tasks";
 const TEACHER_COLUMNS_COLLECTION = "hw_teacher_columns";
+const MY_TASKS_COLLECTION = "hw_my_tasks";
+
+export async function getMyTasks(studentName: string): Promise<MyTask[]> {
+  if (!studentName) return [];
+  const snap = await getDocs(query(collection(db, MY_TASKS_COLLECTION), where("student_name", "==", studentName)));
+  return snap.docs.map(d => ({ ...(d.data() as MyTask), id: d.id }));
+}
+
+export async function addMyTask(task: Omit<MyTask, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+  const now = Date.now();
+  // Firestore ไม่รับค่า undefined - ตัดทิ้งก่อนบันทึก
+  const clean = Object.fromEntries(Object.entries(task).filter(([, v]) => v !== undefined));
+  const ref = await addDoc(collection(db, MY_TASKS_COLLECTION), { ...clean, created_at: now, updated_at: now });
+  return ref.id;
+}
+
+export async function updateMyTask(id: string, data: Partial<MyTask>) {
+  const clean = Object.fromEntries(Object.entries(data).filter(([k, v]) => v !== undefined && k !== 'id'));
+  await updateDoc(doc(db, MY_TASKS_COLLECTION, id), { ...clean, updated_at: Date.now() });
+}
+
+export async function deleteMyTask(id: string) {
+  await deleteDoc(doc(db, MY_TASKS_COLLECTION, id));
+}
 
 // --- Utility Functions ---
 

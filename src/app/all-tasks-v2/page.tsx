@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask } from '@/lib/db';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getTeacherColumns, getGlobalSettings, TeacherColumn, getChildTasks, ChildTask, MyTask, getMyTasks } from '@/lib/db';
 import {
   CheckSquare,
   AlertCircle,
@@ -21,11 +21,14 @@ import {
   Calendar,
   Tag,
   History,
-  AlertTriangle
+  AlertTriangle,
+  GraduationCap,
+  PenLine
 } from 'lucide-react';
 import Link from 'next/link';
 import NameLoading from '@/components/NameLoading';
-import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { isHomeworkDemoUrl, getHomeworkDemo, getMyTasksDemo } from '@/lib/homeworkDemo';
+import { daysUntilDue, thaiShortDate } from '@/lib/dueDate';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong, waitingDays } from '@/lib/homeworkRules';
 import { clsx } from 'clsx';
 
@@ -63,6 +66,9 @@ export default function AllTasksV2Page() {
   // Filter & Layout View Options
   const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [hideCompleted, setHideCompleted] = useState(false);
+  // แสดงงานจากไหน: ชีตครู หรือ งานของฉัน (บันทึกเอง แยกกันคนละชุด ไม่ปนกัน)
+  const [source, setSource] = useState<'official' | 'mine'>('official');
+  const [myTasks, setMyTasks] = useState<MyTask[]>([]);
 
   // Floating Tooltip State (bypasses overflow clipping)
   const [hoveredTask, setHoveredTask] = useState<{
@@ -79,7 +85,7 @@ export default function AllTasksV2Page() {
   const [selectedTaskModal, setSelectedTaskModal] = useState<{
     subject: string;
     seq: number;
-    taskType: 'official';
+    taskType: 'official' | 'mine';
     taskName: string;
     revisionCount?: number;
     revisionHistory?: any[];
@@ -101,6 +107,7 @@ export default function AllTasksV2Page() {
       if (savedLayout === 'vertical' || savedLayout === 'horizontal') {
         setLayoutMode(savedLayout);
       }
+      if (localStorage.getItem('hw_all_tasks_source') === 'mine') setSource('mine');
 
 
       // มีชื่อจำไว้ในเครื่องแล้ว = แสดงหน้าได้ทันที แล้วค่อยเช็คกับ Firestore ตามหลัง
@@ -132,6 +139,11 @@ export default function AllTasksV2Page() {
     init();
   }, []);
 
+  const handleSourceChange = (v: 'official' | 'mine') => {
+    setSource(v);
+    try { localStorage.setItem('hw_all_tasks_source', v); } catch { /* ไม่จำก็ได้ */ }
+  };
+
   const handleLayoutChange = (mode: 'vertical' | 'horizontal') => {
     setLayoutMode(mode);
     localStorage.setItem('hw_all_tasks_layout_mode', mode);
@@ -144,16 +156,19 @@ export default function AllTasksV2Page() {
       const d = getHomeworkDemo(name);
       setTeacherCols(d.cols);
       setChildTasks(d.tasks);
+      setMyTasks(getMyTasksDemo(name));
       setLoading(false);
       return;
     }
     try {
-      const [cols, tasks] = await Promise.all([
+      const [cols, tasks, mine] = await Promise.all([
         getTeacherColumns(name),
-        getChildTasks(name)
+        getChildTasks(name),
+        getMyTasks(name)
       ]);
       setTeacherCols(cols);
       setChildTasks(tasks);
+      setMyTasks(mine);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -319,6 +334,37 @@ export default function AllTasksV2Page() {
     });
   }, [officialSubjectStacks, hideCompleted]);
 
+  // -------------------------------------------------------------
+  // 2. งานของฉัน: จัดกลุ่มตามวิชา เรียงตามวันที่สั่ง (เลขลำดับ 1 = สั่งก่อนสุด, แสดงล่าสุดไว้บน เหมือนชีตครู)
+  // -------------------------------------------------------------
+  const myStacks = useMemo(() => {
+    const sMap = new Map<string, MyTask[]>();
+    myTasks.forEach(t => {
+      const sub = (t.subject || '').trim();
+      if (!sub) return;
+      if (!sMap.has(sub)) sMap.set(sub, []);
+      sMap.get(sub)!.push(t);
+    });
+    return Array.from(sMap.keys()).sort((a, b) => a.localeCompare(b, 'th')).map(subject => {
+      const asc = [...sMap.get(subject)!].sort((a, b) =>
+        (a.assigned_date || '').localeCompare(b.assigned_date || '') || (a.created_at || 0) - (b.created_at || 0));
+      const items = asc.map((task, i) => ({ task, seq: i + 1 })).reverse();
+      const done = asc.filter(t => t.status === 'done').length;
+      const total = asc.length;
+      return { subject, items, total, checked: done, pending: total - done, progress: total === 0 ? 0 : Math.round((done / total) * 100) };
+    });
+  }, [myTasks]);
+
+  const myStats = useMemo(() => {
+    let done = 0, overdue = 0;
+    myTasks.forEach(t => {
+      if (t.status === 'done') { done++; return; }
+      const d = daysUntilDue(t.due_date);
+      if (d !== null && d < 0) overdue++;
+    });
+    return { total: myTasks.length, done, overdue, todo: myTasks.length - done };
+  }, [myTasks]);
+
   // แบบแนวตั้ง: บอกให้รู้ว่ายังมีวิชาซ่อนอยู่ทางขวา (จอแคบ เช่น มือถือ)
   const verticalScrollRef = useRef<HTMLDivElement>(null);
   const [hiddenRight, setHiddenRight] = useState(false);
@@ -331,7 +377,7 @@ export default function AllTasksV2Page() {
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => { el.removeEventListener('scroll', check); ro.disconnect(); };
-  }, [layoutMode, displayedOfficialStacks, loading]);
+  }, [layoutMode, displayedOfficialStacks, loading, source, myStacks]);
 
   const currentStats = officialStats;
 
@@ -389,7 +435,7 @@ export default function AllTasksV2Page() {
         cardBg = "bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-500 shadow-xs";
         iconNode = <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />;
         statusKey = 'WaitingTeacher';
-        statusText = days === 0 ? 'ทำเสร็จวันนี้ (รอครูติ๊ก)' : `ทำเสร็จ ${days} วันที่แล้ว (รอครูติ๊ก)`;
+        statusText = days === 0 ? 'ทำเสร็จวันนี้ (รออัปเดต)' : `ทำเสร็จ ${days} วันที่แล้ว (รออัปเดต)`;
       }
     } else if (isOld) {
       cardBg = "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs";
@@ -446,6 +492,88 @@ export default function AllTasksV2Page() {
     );
   };
 
+  // กล่องงานของฉัน: สี = สถานะ (เขียว ทำเสร็จ / แดง เลยกำหนดส่ง / เหลือง ยังไม่ทำ)
+  // ไอคอนหมวกเล็กๆ = งานในคาบ, ไม่มีไอคอน = การบ้าน
+  const renderMyTaskTile = (task: MyTask, seq: number, stackSubject: string) => {
+    const due = daysUntilDue(task.due_date);
+    const isDone = task.status === 'done';
+    const late = !isDone && due !== null && due < 0;
+    const status: 'Checked' | 'Overdue' | 'New' = isDone ? 'Checked' : late ? 'Overdue' : 'New';
+    const kindLabel = task.kind === 'in_class' ? 'งานในคาบ' : 'การบ้าน';
+    const statusText = isDone
+      ? 'ทำเสร็จแล้ว'
+      : late ? `เลยกำหนดส่ง ${-due!} วัน (ยังไม่ทำ)`
+      : due === 0 ? 'ส่งวันนี้ (ยังไม่ทำ)'
+      : due === 1 ? 'ส่งพรุ่งนี้ (ยังไม่ทำ)'
+      : 'ยังไม่ทำ';
+    const cardBg = isDone
+      ? "bg-emerald-50/40 hover:bg-emerald-200 text-emerald-950 border-emerald-400 shadow-2xs"
+      : late
+        ? "bg-rose-200 hover:bg-rose-300 text-rose-950 border-rose-500 shadow-xs"
+        : "bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-500 shadow-xs";
+    return (
+      <button
+        type="button"
+        key={task.id}
+        aria-label={`${stackSubject} ชิ้นที่ ${seq}: ${task.detail} (${kindLabel}, ${statusText})`}
+        onClick={() => {
+          setHoveredTask(null);
+          setSelectedTaskModal({
+            subject: stackSubject,
+            seq,
+            taskType: 'mine',
+            taskName: task.detail,
+            revisionCount: task.rework_count ? task.rework_count + 1 : undefined,
+            assignedDate: task.assigned_date ? thaiShortDate(task.assigned_date) : undefined,
+            dueDate: task.due_date ? thaiShortDate(task.due_date) : undefined,
+            tags: [kindLabel],
+            status,
+            colId: task.id || '',
+            statusText
+          });
+        }}
+        onMouseEnter={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const showBelow = rect.top < 130;
+          setHoveredTask({
+            x: rect.left + rect.width / 2,
+            y: showBelow ? rect.bottom + 8 : rect.top - 8,
+            isBottom: showBelow,
+            subject: stackSubject,
+            seq,
+            name: `${task.detail} (${kindLabel})`,
+            statusText
+          });
+        }}
+        onMouseLeave={() => setHoveredTask(null)}
+        className={clsx(
+          "relative rounded-xl h-[44px] sm:h-[48px] w-[44px] sm:w-[48px] shrink-0 border transition-all cursor-pointer select-none flex flex-col items-center justify-center p-1 hover:scale-105 active:scale-95 shadow-2xs",
+          cardBg
+        )}
+      >
+        <span className="text-[10px] sm:text-[11px] font-black font-mono leading-none">{seq}</span>
+        {task.kind === 'in_class' && (
+          <span className="mt-1 flex items-center justify-center" aria-hidden="true">
+            <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // ชุดข้อมูลที่แสดงตามปุ่มสลับ (หน้าตาตารางเหมือนกันทั้งสองแบบ)
+  type Tile = { key: string; done: boolean; render: () => React.ReactNode };
+  type Stack = { subject: string; items: Tile[]; total: number; pending: number; progress: number };
+  const stacks: Stack[] = source === 'official'
+    ? displayedOfficialStacks.map(st => ({
+        subject: st.subject, total: st.total, pending: st.pending, progress: st.progress,
+        items: st.tasks.map(col => ({ key: col.id, done: col.is_checked, render: () => renderOfficialTaskTile(col, st.subject) })),
+      }))
+    : (hideCompleted ? [...myStacks].sort((a, b) => b.pending - a.pending || a.subject.localeCompare(b.subject, 'th')) : myStacks).map(st => ({
+        subject: st.subject, total: st.total, pending: st.pending, progress: st.progress,
+        items: st.items.map(({ task, seq }) => ({ key: task.id || String(seq), done: task.status === 'done', render: () => renderMyTaskTile(task, seq, st.subject) })),
+      }));
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
 
@@ -457,7 +585,7 @@ export default function AllTasksV2Page() {
             งานทั้งหมด (All Tasks)
           </h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            ตารางแสดงสถานะงานจากชีตครูทุกวิชา
+            {source === 'official' ? 'ตารางแสดงสถานะงานจากชีตครูทุกวิชา' : 'ตารางแสดงงานของฉันทุกวิชา เรียงตามวันที่สั่ง (หมวกเล็กๆ = งานในคาบ)'}
           </p>
         </div>
 
@@ -503,7 +631,7 @@ export default function AllTasksV2Page() {
             )}
           >
             {hideCompleted ? <EyeOff className="w-4 h-4 mr-2 text-[#597ecf]" /> : <Eye className="w-4 h-4 mr-2 text-gray-400" />}
-            {hideCompleted ? 'ซ่อนงานที่ตรวจแล้ว' : 'แสดงงานทั้งหมด'}
+            {hideCompleted ? (source === 'official' ? 'ซ่อนงานที่ตรวจแล้ว' : 'ซ่อนงานที่ทำเสร็จแล้ว') : 'แสดงงานทั้งหมด'}
           </button>
 
           {/* Sync Button */}
@@ -548,18 +676,58 @@ export default function AllTasksV2Page() {
       {/* Summary Stats Toolbar */}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-[#e2e8f0] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
         {/* Left Side: หัวข้องานตามชีตครู */}
-        <div className="flex items-center gap-2 overflow-x-auto w-full xl:w-auto pb-1 xl:pb-0">
-          <span className="px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap shadow-xs bg-[#597ecf] text-white">
-            <CheckSquare className="w-4 h-4" />
-            <span>งานตามชีตครู</span>
-            <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-white/20 text-white">
-              {countOfficialPending}
-            </span>
-          </span>
-
+        <div role="tablist" aria-label="เลือกชุดงาน" className="grid grid-cols-2 gap-1 p-1 bg-[#f4f7fa] rounded-2xl border border-[#e2e8f0] w-full sm:w-auto">
+          {([
+            ['official', 'งานตามชีตครู', CheckSquare, countOfficialPending],
+            ['mine', 'งานของฉัน', PenLine, myStats.todo],
+          ] as const).map(([v, label, Icon, n]) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={source === v}
+              onClick={() => handleSourceChange(v)}
+              className={clsx(
+                "h-11 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer",
+                source === v ? "bg-[#597ecf] text-white shadow-xs" : "text-[#57627a] hover:bg-white"
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{label}</span>
+              <span className={clsx("px-2 py-0.5 rounded-full text-xs font-extrabold", source === v ? "bg-white/20 text-white" : "bg-white text-[#57627a]")}>{n}</span>
+            </button>
+          ))}
         </div>
 
         {/* Right Side: Integrated Status Summary Group */}
+        {source === 'mine' ? (
+          <div className="flex items-center gap-2 flex-wrap xl:flex-nowrap justify-start xl:justify-end w-full xl:w-auto">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f4f7fa] rounded-xl border border-[#e2e8f0] text-xs font-medium text-gray-700">
+              <ListTodo className="w-3.5 h-3.5 text-[#597ecf] shrink-0" />
+              <span className="text-gray-500">งานทั้งหมด:</span>
+              <span className="font-extrabold text-[#597ecf]">{myStats.total}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-medium text-emerald-900">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="text-emerald-700">ทำเสร็จแล้ว:</span>
+              <span className="font-extrabold text-emerald-700">{myStats.done}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-200 text-xs font-medium text-rose-800">
+              <Flame className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              <span className="text-rose-700">เลยกำหนดส่ง:</span>
+              <span className="font-extrabold text-rose-700">{myStats.overdue}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-200 text-xs font-medium text-amber-900">
+              <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="text-amber-700">ยังไม่ทำ:</span>
+              <span className="font-extrabold text-amber-700">{myStats.todo}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-[#e2e8f0] text-xs font-medium text-gray-600">
+              <GraduationCap className="w-3.5 h-3.5 text-gray-600 shrink-0" />
+              <span>= งานในคาบ</span>
+            </div>
+          </div>
+        ) : (
         <div className="flex items-center gap-2 flex-wrap xl:flex-nowrap justify-start xl:justify-end w-full xl:w-auto">
           {/* Total */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f4f7fa] rounded-xl border border-[#e2e8f0] text-xs font-medium text-gray-700">
@@ -578,7 +746,7 @@ export default function AllTasksV2Page() {
           {/* ทำเสร็จแล้ว รอครูติ๊ก */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#eef3fc] rounded-xl border border-[#597ecf]/30 text-xs font-medium text-[#597ecf]">
             <Clock className="w-3.5 h-3.5 text-[#597ecf] shrink-0" />
-            <span>รอครูติ๊ก:</span>
+            <span>รออัปเดต:</span>
             <span className="font-extrabold">{currentStats.waitingCount}</span>
           </div>
 
@@ -586,7 +754,7 @@ export default function AllTasksV2Page() {
           {currentStats.waitTooLongCount > 0 && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-300 text-xs font-medium text-rose-800">
               <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-              <span>รอครูติ๊กเกิน {WAIT_ALERT_DAYS} วัน:</span>
+              <span>รออัปเดตเกิน {WAIT_ALERT_DAYS} วัน:</span>
               <span className="font-extrabold">{currentStats.waitTooLongCount}</span>
             </div>
           )}
@@ -605,6 +773,7 @@ export default function AllTasksV2Page() {
             <span className="font-extrabold text-amber-700">{currentStats.newCount}</span>
           </div>
         </div>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -612,7 +781,18 @@ export default function AllTasksV2Page() {
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#597ecf]"></div>
         </div>
-      ) : displayedOfficialStacks.length === 0 ? (
+      ) : source === 'mine' && stacks.length === 0 ? (
+        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
+          <div className="bg-[#eef3fc] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
+            <PenLine className="w-8 h-8 text-[#597ecf]" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">ยังไม่มีงานของฉัน</h3>
+          <p className="text-gray-500 mb-6 text-sm max-w-md mx-auto">บันทึกงานรายวันได้ที่หน้างานของฉัน</p>
+          <Link href="/homework?view=mine" className="inline-flex items-center bg-[#597ecf] hover:bg-[#486cb8] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xs active:scale-95">
+            <PenLine className="w-4 h-4 mr-2" /> ไปหน้างานของฉัน
+          </Link>
+        </div>
+      ) : stacks.length === 0 ? (
         <div className="bg-white border border-[#e2e8f0] rounded-3xl p-12 text-center shadow-xs">
           <div className="bg-[#eef3fc] w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
             <CheckCircle2 className="w-8 h-8 text-[#597ecf]" />
@@ -641,8 +821,8 @@ export default function AllTasksV2Page() {
               <div className="flex gap-2.5 sm:gap-3.5 min-w-max items-start justify-start">
 
                 {/* 1. Official Mode Vertical Columns */}
-                {displayedOfficialStacks.map((stack) => {
-                  const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
+                {stacks.map((stack) => {
+                  const visibleTasks = hideCompleted ? stack.items.filter(t => !t.done) : stack.items;
 
                   return (
                     <div
@@ -694,12 +874,12 @@ export default function AllTasksV2Page() {
 
                       {/* Compact Task Tiles */}
                       <div className="flex flex-col gap-1.5">
-                        {visibleTasks.map((col) => renderOfficialTaskTile(col, stack.subject))}
+                        {visibleTasks.map((it) => <React.Fragment key={it.key}>{it.render()}</React.Fragment>)}
 
                         {visibleTasks.length === 0 && (
                           <div className="py-4 text-center bg-white/60 rounded-xl border border-dashed border-[#e2e8f0] flex flex-col items-center justify-center gap-1">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span className="text-[10px] text-emerald-700 font-bold">ครบแล้ว</span>
+                            <span className="text-[10px] text-emerald-700 font-bold">{source === 'official' ? 'ครบแล้ว' : 'เสร็จหมด'}</span>
                           </div>
                         )}
                       </div>
@@ -727,8 +907,8 @@ export default function AllTasksV2Page() {
             <div className="flex flex-col gap-3 w-full">
 
               {/* 1. Official Mode Horizontal Rows */}
-              {displayedOfficialStacks.map((stack) => {
-                const visibleTasks = hideCompleted ? stack.tasks.filter(t => !t.is_checked) : stack.tasks;
+              {stacks.map((stack) => {
+                const visibleTasks = hideCompleted ? stack.items.filter(t => !t.done) : stack.items;
 
                 return (
                   <div
@@ -773,12 +953,12 @@ export default function AllTasksV2Page() {
 
                     {/* Task Tiles Strip */}
                     <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1.5 px-1 min-w-0 scrollbar-hover">
-                      {visibleTasks.map((col) => renderOfficialTaskTile(col, stack.subject))}
+                      {visibleTasks.map((it) => <React.Fragment key={it.key}>{it.render()}</React.Fragment>)}
 
                       {visibleTasks.length === 0 && (
                         <div className="py-2.5 px-4 text-xs text-emerald-700 font-bold bg-white/60 rounded-xl border border-dashed border-emerald-200 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>ตรวจครบเรียบร้อยแล้ว</span>
+                          <span>{source === 'official' ? 'ตรวจครบเรียบร้อยแล้ว' : 'ทำเสร็จหมดแล้ว'}</span>
                         </div>
                       )}
                     </div>
@@ -877,7 +1057,7 @@ export default function AllTasksV2Page() {
             <div className="bg-[#f4f7fa] rounded-2xl p-4 space-y-3 border border-[#e2e8f0] mb-5">
               <div>
                 <p className="text-xs text-gray-400 font-semibold mb-0.5">
-                  ชื่องานที่ครูสั่ง
+                  {selectedTaskModal.taskType === 'mine' ? 'รายละเอียดงาน (งานของฉัน)' : 'ชื่องานที่ครูสั่ง'}
                 </p>
                 <p className="text-sm font-bold text-gray-900">{selectedTaskModal.taskName}</p>
               </div>
@@ -885,7 +1065,7 @@ export default function AllTasksV2Page() {
               {selectedTaskModal.revisionCount && selectedTaskModal.revisionCount > 1 && (
                 <div>
                   <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
-                    <History className="w-3.5 h-3.5 text-gray-500" /> รอบการทำ / แก้ไข
+                    <History className="w-3.5 h-3.5 text-gray-500" /> {selectedTaskModal.taskType === 'mine' ? 'ครูให้แก้ไข' : 'รอบการทำ / แก้ไข'}
                   </p>
                   <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-md border border-amber-200 inline-block">
                     รอบที่ {selectedTaskModal.revisionCount}
@@ -896,7 +1076,7 @@ export default function AllTasksV2Page() {
               {selectedTaskModal.assignedDate && (
                 <div>
                   <p className="text-xs text-gray-400 font-semibold mb-0.5 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-gray-500" /> วันที่มอบหมาย
+                    <Calendar className="w-3.5 h-3.5 text-gray-500" /> {selectedTaskModal.taskType === 'mine' ? 'วันที่สั่ง' : 'วันที่มอบหมาย'}
                   </p>
                   <p className="text-xs font-bold text-gray-800">{selectedTaskModal.assignedDate}</p>
                 </div>
@@ -981,7 +1161,14 @@ export default function AllTasksV2Page() {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              {selectedTaskModal.status !== 'Checked' && (
+              {selectedTaskModal.taskType === 'mine' ? (
+                <Link
+                  href={`/homework?view=mine&subject=${encodeURIComponent(selectedTaskModal.subject)}`}
+                  className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <PenLine className="w-4 h-4" /> ไปที่หน้างานของฉัน
+                </Link>
+              ) : selectedTaskModal.status !== 'Checked' && (
                 <Link
                   href={`/homework?subject=${encodeURIComponent(selectedTaskModal.subject)}&task=${encodeURIComponent(selectedTaskModal.colId)}`}
                   className="flex-1 bg-[#597ecf] hover:bg-[#486cb8] text-white font-bold py-3 px-4 rounded-xl text-center text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"

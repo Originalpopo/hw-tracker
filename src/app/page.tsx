@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns, TeacherColumn } from '@/lib/db';
-import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
+import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns, TeacherColumn, MyTask, getMyTasks } from '@/lib/db';
+import { isHomeworkDemoUrl, getHomeworkDemo, getMyTasksDemo } from '@/lib/homeworkDemo';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong } from '@/lib/homeworkRules';
-import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle, RefreshCcw, PenLine } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import NameLoading from '@/components/NameLoading';
-import { assignedAt } from '@/lib/dueDate';
+import { assignedAt, daysUntilDue } from '@/lib/dueDate';
 import confetti from 'canvas-confetti';
 
 interface SubjectStatDetail {
@@ -18,6 +18,8 @@ interface SubjectStatDetail {
   officialDone: number;
   /** วงกลมใต้แถบ: 1 วง = งานที่ครูยังไม่ติ๊ก 1 ชิ้น */
   dots: { kind: PendingDot; name: string }[];
+  /** งานของฉัน (บันทึกเอง แยกจากชีตครู - ไม่นับรวมกับตัวเลขของชีตครู) */
+  mine: { total: number; done: number; dots: { kind: 'late' | 'todo'; name: string }[] };
 }
 
 // งานค้างเกินกี่วัน (นับจากวันที่ครูสั่ง - ดู assignedAt) ถึงเปลี่ยนวงกลมเป็นสีแดง
@@ -27,7 +29,7 @@ const DOT_ORDER: Record<PendingDot, number> = { late: 0, todo: 1, waiting: 2 };
 const DOT_STYLE: Record<PendingDot, { cls: string; label: string }> = {
   late: { cls: 'bg-rose-500', label: `ยังไม่ทำ ค้างเกิน ${STALE_TODO_DAYS} วัน` },
   todo: { cls: 'bg-amber-400', label: 'ยังไม่ทำ' },
-  waiting: { cls: 'bg-sky-500', label: 'ทำเสร็จแล้ว รอครูติ๊ก' },
+  waiting: { cls: 'bg-sky-500', label: 'ทำเสร็จแล้ว รออัปเดต' },
 };
 
 export default function DashboardOverview() {
@@ -39,6 +41,7 @@ export default function DashboardOverview() {
   const [loading, setLoading] = useState(true);
   const [animateBars, setAnimateBars] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [myTasks, setMyTasks] = useState<MyTask[]>([]);
 
   // ดึงข้อมูลจากชีตครู -> บันทึกลง Firestore (ทุกหน้าอ่านจากที่เดียวกัน) แล้วโหลดหน้านี้ใหม่
   // ไม่ส่งลิงก์ชีต: เซิร์ฟเวอร์ใช้ลิงก์จากหน้าตั้งค่าเอง
@@ -98,13 +101,15 @@ export default function DashboardOverview() {
       const d = getHomeworkDemo(name);
       setTasks(d.tasks);
       setTeacherCols(d.cols);
+      setMyTasks(getMyTasksDemo(name));
       setLoading(false);
       return;
     }
     try {
-      const [data, cols] = await Promise.all([getChildTasks(name), getTeacherColumns(name)]);
+      const [data, cols, mine] = await Promise.all([getChildTasks(name), getTeacherColumns(name), getMyTasks(name)]);
       setTasks(data);
       setTeacherCols(cols);
+      setMyTasks(mine);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -196,7 +201,8 @@ export default function DashboardOverview() {
         done: 0,
         officialTotal: 0,
         officialDone: 0,
-        dots: []
+        dots: [],
+        mine: { total: 0, done: 0, dots: [] }
       };
     }
     const isDone = c.is_checked;
@@ -218,7 +224,25 @@ export default function DashboardOverview() {
     if (isDone) subjectStats[sub].officialDone += 1;
   });
 
-  const subjects = Object.keys(subjectStats).sort();
+  // งานของฉัน: แถบ + วงกลมอีกชุดในการ์ดวิชาเดียวกัน
+  // แดง = เลยกำหนดส่ง (หรือไม่มีกำหนดส่งแต่สั่งมาเกิน 3 วัน), เหลือง = ยังไม่ทำ
+  myTasks.forEach(t => {
+    const sub = (t.subject || '').trim();
+    if (!sub) return;
+    if (!subjectStats[sub]) {
+      subjectStats[sub] = { total: 0, done: 0, officialTotal: 0, officialDone: 0, dots: [], mine: { total: 0, done: 0, dots: [] } };
+    }
+    const m = subjectStats[sub].mine;
+    m.total += 1;
+    if (t.status === 'done') { m.done += 1; return; }
+    const due = daysUntilDue(t.due_date);
+    const since = assignedAt({ assignedDate: t.assigned_date });
+    const ageDays = since ? Math.floor((Date.now() - since) / (24 * 60 * 60 * 1000)) : 0;
+    const late = due !== null ? due < 0 : ageDays > STALE_TODO_DAYS;
+    m.dots.push({ kind: late ? 'late' : 'todo', name: t.detail });
+  });
+
+  const subjects = Object.keys(subjectStats).sort((a, b) => a.localeCompare(b, 'th'));
 
   const getHeroPercentColorClass = (percent: number) => {
     if (percent === 100) return 'text-emerald-300';
@@ -319,7 +343,7 @@ export default function DashboardOverview() {
               <div className="mt-3 md:mt-0 md:order-last xl:mt-3 xl:order-none flex items-center md:justify-center xl:justify-start gap-2 text-xs font-semibold text-gray-600 flex-wrap">
                 <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
                   <Clock className="w-3.5 h-3.5 text-[#597ecf]" />
-                  ทำเสร็จ รอครูติ๊ก: <strong className="text-gray-900">{waitingCount}</strong>
+                  ทำเสร็จ รออัปเดต: <strong className="text-gray-900">{waitingCount}</strong>
                 </span>
                 {waitTooLongCount > 0 && (
                   <Link href="/homework" className="inline-flex items-center gap-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-700">
@@ -396,7 +420,10 @@ export default function DashboardOverview() {
 
             const officialPercent = stats.officialTotal === 0 ? 100 : Math.round((stats.officialDone / stats.officialTotal) * 100);
 
-            const isCompleted = pendingCount === 0 && stats.total > 0;
+            const myTodo = stats.mine.total - stats.mine.done;
+            const myPercent = stats.mine.total === 0 ? 0 : Math.round((stats.mine.done / stats.mine.total) * 100);
+            // การ์ดเป็นสีเขียว (เสร็จหมด) เมื่อไม่มีงานค้างทั้งจากชีตครูและงานของฉัน
+            const isCompleted = pendingCount === 0 && myTodo === 0 && (stats.total > 0 || stats.mine.total > 0);
 
             const cardContent = (
               <div className={clsx(
@@ -420,7 +447,7 @@ export default function DashboardOverview() {
                     )}>
                       {subject}
                     </h3>
-                    <div className={clsx("text-xs mt-0.5 font-medium flex flex-wrap items-center gap-x-1.5", !isCompleted ? "text-gray-500" : "text-emerald-100")}>
+                    {stats.officialTotal > 0 && <div className={clsx("text-xs mt-0.5 font-medium flex flex-wrap items-center gap-x-1.5", !isCompleted ? "text-gray-500" : "text-emerald-100")}>
                       <span>ทั้งหมด {stats.total} งาน</span>
                       <span>•</span>
                       <span className={!isCompleted ? "text-emerald-600 font-semibold" : "text-white font-semibold"}>เสร็จ {stats.done}</span>
@@ -434,25 +461,25 @@ export default function DashboardOverview() {
                       {waitingDotCount > 0 && (
                         <>
                           <span>•</span>
-                          <span className="text-sky-600 font-bold">รอครูติ๊ก {waitingDotCount}</span>
+                          <span className="text-sky-600 font-bold">รออัปเดต {waitingDotCount}</span>
                         </>
                       )}
-                    </div>
+                    </div>}
                   </div>
 
-                  <div className={clsx(
+                  {stats.officialTotal > 0 && <div className={clsx(
                     "text-xl font-black shrink-0",
                     !isCompleted ? getProgressColorClass(overallPercent) : "text-white"
                   )}>
                     {overallPercent}%
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Dual Bars Section */}
                 <div className="relative z-10 space-y-3.5 pt-1">
 
                   {/* Bar 1: งานตามชีตครู */}
-                  <div>
+                  {stats.officialTotal > 0 && <div>
                     <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
                       <span className={clsx("flex items-center gap-1.5", !isCompleted ? "text-gray-700" : "text-emerald-50")}>
                         <CheckSquare className="w-3.5 h-3.5 opacity-80" />
@@ -493,16 +520,58 @@ export default function DashboardOverview() {
                         ))}
                       </div>
                     )}
-                  </div>
+                  </div>}
+
+                  {/* Bar 2: งานของฉัน (แยกจากชีตครู) */}
+                  {stats.mine.total > 0 && (
+                    <div>
+                      <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
+                        <span className={clsx("flex items-center gap-1.5", !isCompleted ? "text-gray-700" : "text-emerald-50")}>
+                          <PenLine className="w-3.5 h-3.5 opacity-80" />
+                          <span>งานของฉัน:</span>
+                          <span className="font-normal">{stats.mine.done}/{stats.mine.total}</span>
+                        </span>
+                        <span className={!isCompleted ? "text-gray-600 font-bold" : "text-white font-bold"}>
+                          {myPercent}%
+                        </span>
+                      </div>
+                      <div className={clsx("w-full rounded-full h-3 relative shadow-inner overflow-visible", !isCompleted ? "bg-[#f1f3f6]" : "bg-white/20")}>
+                        <div
+                          className={clsx(
+                            "h-full rounded-full transition-all duration-1000 ease-out relative",
+                            isCompleted ? "bg-white/70" : myPercent === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-gradient-to-r from-sky-300 via-[#597ecf] to-violet-500"
+                          )}
+                          style={{ width: animateBars ? `${myPercent}%` : '0%' }}
+                        />
+                      </div>
+                      {stats.mine.dots.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-3" role="list" aria-label="งานของฉันที่ยังไม่ทำ">
+                          {[...stats.mine.dots].sort((a, b) => DOT_ORDER[a.kind] - DOT_ORDER[b.kind]).map((d, i) => (
+                            <span
+                              key={i}
+                              role="listitem"
+                              title={`${d.name} — ${DOT_STYLE[d.kind].label}`}
+                              aria-label={`${d.name}: ${DOT_STYLE[d.kind].label}`}
+                              className={clsx("w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs", DOT_STYLE[d.kind].cls)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 </div>
 
               </div>
             );
 
-            if (pendingCount > 0) {
+            if (pendingCount > 0 || myTodo > 0) {
+              // มีงานค้างจากครู -> ไปหน้างานค้างจากครู, ไม่มีแล้ว -> ไปหน้างานของฉัน
+              const href = pendingCount > 0
+                ? `/homework?subject=${encodeURIComponent(subject)}`
+                : `/homework?view=mine&subject=${encodeURIComponent(subject)}`;
               return (
-                <Link key={subject} href={`/homework?subject=${encodeURIComponent(subject)}`} className="block">
+                <Link key={subject} href={href} className="block">
                   {cardContent}
                 </Link>
               );

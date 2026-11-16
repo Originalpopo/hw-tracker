@@ -96,14 +96,14 @@ export default function PrintHubPage() {
             </div>
 
             <h2 className="text-xl font-black mb-2 tracking-tight group-hover:text-emerald-100 transition-colors">
-              งานรอครูติ๊ก
+              งานรออัปเดต
             </h2>
             <p className="text-emerald-100 text-xs sm:text-sm leading-relaxed mb-6 flex-grow">
               พิมพ์รายการงานที่ทำเสร็จแล้วแต่ครูยังไม่ติ๊ก พร้อมจำนวนวันที่รอ ให้ลูกพกไปตามงานกับครู งานที่รอเกิน 7 วันจะมีป้ายเตือน
             </p>
 
             <div className="inline-flex items-center justify-center text-xs font-bold bg-white text-emerald-700 px-4 py-2.5 rounded-xl shadow-sm group-hover:bg-emerald-50 transition-all mt-auto w-max active:scale-95">
-              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์งานรอครูติ๊ก
+              <Printer className="w-3.5 h-3.5 mr-1.5" /> พิมพ์งานรออัปเดต
             </div>
           </div>
         </Link>

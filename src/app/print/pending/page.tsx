@@ -237,11 +237,11 @@ export default function PrintPendingPage() {
                             {isWaiting ? (
                               days >= WAIT_ALERT_DAYS ? (
                                 <span className="inline-block border-2 border-black bg-gray-200 font-black text-[11px] px-2 py-0.5 rounded shrink-0">
-                                  ! ตามงาน: รอครูติ๊ก {days} วัน
+                                  ! ตามงาน: รออัปเดต {days} วัน
                                 </span>
                               ) : (
                                 <span className="inline-block border border-black bg-gray-100 font-bold text-[11px] px-2 py-0.5 rounded shrink-0">
-                                  ✓ ทำเสร็จแล้ว รอครูติ๊ก
+                                  ✓ ทำเสร็จแล้ว รออัปเดต
                                 </span>
                               )
                             ) : null}

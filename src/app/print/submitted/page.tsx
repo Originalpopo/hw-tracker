@@ -142,7 +142,7 @@ export default function PrintSubmittedPage() {
               className="flex items-center justify-center bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer active:scale-95 transition-all w-full sm:w-auto"
             >
               <Printer className="w-4 h-4 mr-1.5" />
-              พิมพ์งานรอครูติ๊ก
+              พิมพ์งานรออัปเดต
             </button>
           </div>
         </div>
@@ -150,7 +150,7 @@ export default function PrintSubmittedPage() {
         {/* Filter Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#e2e8f0]">
           <div className="text-xs font-semibold text-gray-600">
-            งานที่ทำเสร็จแล้ว รอครูติ๊กในชีต: <strong className="text-emerald-800">{displayedTasks.length} รายการ</strong>
+            งานที่ทำเสร็จแล้ว รออัปเดตในชีต: <strong className="text-emerald-800">{displayedTasks.length} รายการ</strong>
           </div>
 
           {/* Subject Filter */}
@@ -174,7 +174,7 @@ export default function PrintSubmittedPage() {
       <div className="w-full max-w-[210mm] mx-auto bg-white text-black print:p-0">
         <div className="border-b-2 border-black pb-3 mb-5 text-center">
           <h1 className="text-2xl font-bold tracking-tight">
-            งานรอครูติ๊ก
+            งานรออัปเดต
           </h1>
           <div className="flex justify-between items-center text-xs text-gray-700 mt-1 font-medium px-1">
             <span>นักเรียน: <strong>{studentName}</strong></span>

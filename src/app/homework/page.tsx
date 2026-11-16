@@ -6,6 +6,7 @@ import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, updateChildTask, g
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import NameLoading from '@/components/NameLoading';
+import MyTasksView from '@/components/MyTasksView';
 import { useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 import { isHomeworkDemo, getHomeworkDemo } from '@/lib/homeworkDemo';
@@ -45,8 +46,25 @@ function HomeworkDashboard() {
   const [syncing, setSyncing] = useState(false);
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
 
-  // Filter states (หน้านี้แสดงเฉพาะงานค้างจากครู - ไม่มีระบบงานส่วนตัวแล้ว)
+  // Filter states (ใช้ร่วมกันทั้งสองแบบ: งานค้างจากครู / งานของฉัน)
   const [filterSubject, setFilterSubject] = useState<string>(defaultFilter);
+
+  // แบบที่แสดง: ?view=mine = งานของฉัน, อื่นๆ = งานค้างจากครู (ค่าเริ่มต้น)
+  const [view, setView] = useState<'teacher' | 'mine'>(searchParams.get('view') === 'mine' ? 'mine' : 'teacher');
+  useEffect(() => {
+    setView(searchParams.get('view') === 'mine' ? 'mine' : 'teacher');
+  }, [searchParams]);
+  // กดปุ่ม "เพิ่มงาน" ที่หัวหน้า -> เพิ่มเลขนี้ -> MyTasksView เปิดฟอร์ม
+  const [addRequest, setAddRequest] = useState(0);
+  const switchView = (v: 'teacher' | 'mine') => {
+    setView(v);
+    // จำไว้ในลิงก์ (กดย้อนกลับ/รีเฟรชแล้วยังอยู่แบบเดิม) โดยไม่โหลดหน้าใหม่
+    const params = new URLSearchParams(window.location.search);
+    if (v === 'mine') params.set('view', 'mine'); else params.delete('view');
+    params.delete('task');
+    const q = params.toString();
+    window.history.replaceState(null, '', q ? `?${q}` : window.location.pathname);
+  };
 
   // รายชื่อวิชาของครู (ดึงจาก TeacherColumn และ ChildTask สาย official)
   const teacherSubjects = useMemo(() => {
@@ -356,12 +374,14 @@ function HomeworkDashboard() {
         <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
             <BookOpen className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
-            งานค้างจากครู<span className="hidden sm:inline">&nbsp;(Pending Work)</span>
+            งานของฉัน<span className="hidden sm:inline">&nbsp;(My Work)</span>
           </h1>
-          <p className="hidden sm:block text-gray-500 mt-1 text-sm sm:text-base">งานที่ครูยังไม่ได้ติ๊กในชีตของ {studentName} ทำเสร็จแล้วกด &quot;ทำเสร็จแล้ว&quot; งานจะไปรอครูติ๊ก ถ้าเกิน {WAIT_ALERT_DAYS} วันครูยังไม่ติ๊กจะขึ้นเตือน</p>
+          <p className="hidden sm:block text-gray-500 mt-1 text-sm sm:text-base">{view === 'mine'
+            ? 'บันทึกงานรายวันของแต่ละวิชาเอง แยกจากชีตครู ทำเสร็จแล้วกด "ทำเสร็จแล้ว" ถ้าครูให้แก้ไขกด "ครูให้แก้ไข" งานจะกลับมาช่องยังไม่ทำ'
+            : <>งานที่ครูยังไม่ได้ติ๊กในชีตของ {studentName} ทำเสร็จแล้วกด &quot;ทำเสร็จแล้ว&quot; งานจะไปรออัปเดต ถ้าเกิน {WAIT_ALERT_DAYS} วันครูยังไม่ติ๊กจะขึ้นเตือน</>}</p>
         </div>
 
-        <button
+        {view === 'teacher' && <button
           onClick={handleSyncFromTeacher}
           disabled={syncing}
           aria-label="อัปเดตข้อมูลจากครู"
@@ -370,9 +390,41 @@ function HomeworkDashboard() {
         >
           <RefreshCcw className={clsx("w-4 h-4 sm:mr-2", syncing && "animate-spin")} />
           <span className="hidden sm:inline">{syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}</span>
-        </button>
+        </button>}
+        {/* งานของฉัน: ปุ่มเพิ่มงานอยู่ตำแหน่งเดียวกับปุ่มอัปเดตของฝั่งครู */}
+        {view === 'mine' && <button
+          type="button"
+          onClick={() => setAddRequest(n => n + 1)}
+          aria-label="เพิ่มงาน"
+          className="h-11 w-11 sm:w-full lg:w-auto sm:px-4 rounded-xl text-sm font-bold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
+        >
+          <Plus className="w-5 h-5 sm:w-4 sm:h-4 sm:mr-1.5" />
+          <span className="hidden sm:inline">เพิ่มงาน</span>
+        </button>}
       </div>
 
+      {/* สลับ งานค้างจากครู / งานของฉัน (สองอย่างแยกกันขาด ไม่ปนข้อมูลกัน) */}
+      <div role="tablist" aria-label="เลือกประเภทงาน" className="grid grid-cols-2 gap-1 p-1 bg-white rounded-2xl border border-[#e2e8f0] shadow-xs sm:w-[420px]">
+        {([['teacher', 'งานค้างจากครู'], ['mine', 'งานของฉัน']] as const).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => switchView(v)}
+            className={clsx(
+              "h-11 rounded-xl text-sm font-bold transition-all cursor-pointer",
+              view === v ? "bg-[#597ecf] text-white shadow-xs" : "text-[#57627a] hover:bg-[#f4f7fa]"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'mine' ? (
+        <MyTasksView studentName={studentName} subjects={uniqueSubjects} filterSubject={filterSubject} onFilterSubject={setFilterSubject} demo={demo} addRequest={addRequest} />
+      ) : (<>
       {/* Filter Toolbar Card */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex flex-col gap-2 w-full md:w-auto">
@@ -388,13 +440,13 @@ function HomeworkDashboard() {
             </div>
             <div className="bg-[#eef3fc] rounded-xl px-2 py-2.5 text-center">
               <div className="text-2xl font-extrabold text-[#486cb8] leading-tight">{summary.waiting}</div>
-              <div className="text-[11px] sm:text-xs font-semibold text-[#3b5a9e]">รอครูติ๊ก</div>
+              <div className="text-[11px] sm:text-xs font-semibold text-[#3b5a9e]">รออัปเดต</div>
             </div>
           </div>
           {countWaitTooLong > 0 && (
             <span className="px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              รอครูติ๊กเกิน {WAIT_ALERT_DAYS} วัน: {countWaitTooLong}
+              รออัปเดตเกิน {WAIT_ALERT_DAYS} วัน: {countWaitTooLong}
             </span>
           )}
         </div>
@@ -481,7 +533,7 @@ function HomeworkDashboard() {
 
           {/* 2. ทำเสร็จแล้ว รอครูติ๊ก (รอนานสุดอยู่บนสุด) */}
           <TaskColumn
-            title="ทำเสร็จแล้ว (รอครูติ๊ก)"
+            title="ทำเสร็จแล้ว (รออัปเดต)"
             icon={<Clock className="w-5 h-5 text-[#597ecf]" />}
             tasks={filteredTasks.filter(isWaitingForTeacher).sort((a, b) => waitingSince(a) - waitingSince(b))}
             bgColor="bg-[#eef3fc]/20"
@@ -512,11 +564,11 @@ function HomeworkDashboard() {
                           : <Clock className="w-4 h-4 text-amber-600 shrink-0" />}
                         {tooLong ? (
                           <span>
-                            รอครูติ๊กมา {days} วันแล้ว
+                            รออัปเดตมา {days} วันแล้ว
                             <span className="block font-medium text-rose-700">ตามงานกับครู อาจยังไม่ได้ส่ง หรือต้องแก้ไข</span>
                           </span>
                         ) : (
-                          <span>รอครูติ๊ก · ทำเสร็จ{days === 0 ? 'วันนี้' : ` ${days} วันที่แล้ว`}</span>
+                          <span>รออัปเดต · ทำเสร็จ{days === 0 ? 'วันนี้' : ` ${days} วันที่แล้ว`}</span>
                         )}
                       </span>
                       <button
@@ -534,6 +586,7 @@ function HomeworkDashboard() {
           </TaskColumn>
         </div>
       )}
+      </>)}
     </div>
   );
 }
