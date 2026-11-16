@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { getChildTasks, ChildTask, getGlobalSettings, getTeacherColumns, TeacherColumn } from '@/lib/db';
 import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong } from '@/lib/homeworkRules';
-import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle } from 'lucide-react';
+import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle, RefreshCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import NameLoading from '@/components/NameLoading';
+import { assignedAt } from '@/lib/dueDate';
 import confetti from 'canvas-confetti';
 
 interface SubjectStatDetail {
@@ -15,7 +16,19 @@ interface SubjectStatDetail {
   done: number;
   officialTotal: number;
   officialDone: number;
+  /** วงกลมใต้แถบ: 1 วง = งานที่ครูยังไม่ติ๊ก 1 ชิ้น */
+  dots: { kind: PendingDot; name: string }[];
 }
+
+// งานค้างเกินกี่วัน (นับจากวันที่ครูสั่ง - ดู assignedAt) ถึงเปลี่ยนวงกลมเป็นสีแดง
+const STALE_TODO_DAYS = 3;
+type PendingDot = 'late' | 'todo' | 'waiting';
+const DOT_ORDER: Record<PendingDot, number> = { late: 0, todo: 1, waiting: 2 };
+const DOT_STYLE: Record<PendingDot, { cls: string; label: string }> = {
+  late: { cls: 'bg-rose-500', label: `ยังไม่ทำ ค้างเกิน ${STALE_TODO_DAYS} วัน` },
+  todo: { cls: 'bg-amber-400', label: 'ยังไม่ทำ' },
+  waiting: { cls: 'bg-sky-500', label: 'ทำเสร็จแล้ว รอครูติ๊ก' },
+};
 
 export default function DashboardOverview() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
@@ -25,6 +38,34 @@ export default function DashboardOverview() {
   const [nameReady, setNameReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [animateBars, setAnimateBars] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // ดึงข้อมูลจากชีตครู -> บันทึกลง Firestore (ทุกหน้าอ่านจากที่เดียวกัน) แล้วโหลดหน้านี้ใหม่
+  // ไม่ส่งลิงก์ชีต: เซิร์ฟเวอร์ใช้ลิงก์จากหน้าตั้งค่าเอง
+  const handleSyncFromTeacher = async () => {
+    if (!studentName || isHomeworkDemoUrl()) return;
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentName })
+      });
+      if (res.ok) {
+        await loadData(studentName);
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error === 'studentName and sheetUrls array are required'
+          ? 'กรุณาตั้งค่าลิงก์ Google Sheet ในหน้าตั้งค่าก่อนครับ'
+          : 'เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheet');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -154,12 +195,24 @@ export default function DashboardOverview() {
         total: 0,
         done: 0,
         officialTotal: 0,
-        officialDone: 0
+        officialDone: 0,
+        dots: []
       };
     }
     const isDone = c.is_checked;
     subjectStats[sub].total += 1;
     if (isDone) subjectStats[sub].done += 1;
+    if (!isDone) {
+      const t = taskByCol.get(c.id);
+      let kind: PendingDot;
+      if (isWaitingForTeacher(t)) kind = 'waiting';
+      else {
+        const since = assignedAt({ assignedDate: t?.assigned_date, taskName: c.column_name, firstSeenAt: c.first_seen_at });
+        const ageDays = since ? Math.floor((Date.now() - since) / (24 * 60 * 60 * 1000)) : 0;
+        kind = ageDays > STALE_TODO_DAYS ? 'late' : 'todo';
+      }
+      subjectStats[sub].dots.push({ kind, name: t?.task_name || c.column_name });
+    }
 
     subjectStats[sub].officialTotal += 1;
     if (isDone) subjectStats[sub].officialDone += 1;
@@ -177,27 +230,23 @@ export default function DashboardOverview() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      {/* Hero Welcome Card with Integrated Progress Bar */}
-      <div className="bg-gradient-to-br from-[#597ecf] via-[#4a6fb8] to-[#434c60] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-4 animate-float">
-          <Trophy className="w-48 h-48" />
+      {/* หัวหน้า: ชื่อเด็ก (ไม่มีกล่อง) + กล่องสีน้ำเงินเฉพาะแถบความคืบหน้ากับ % */}
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
+          Hi, {studentName}!
+        </h1>
+        <p className="text-gray-500 text-sm sm:text-base mt-1">
+          พร้อมทำภารกิจประจำวันหรือยัง?
+        </p>
+      </div>
+
+      <div className="bg-gradient-to-br from-[#597ecf] via-[#4a6fb8] to-[#434c60] rounded-3xl px-5 py-5 sm:px-8 sm:py-6 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-6 animate-float pointer-events-none">
+          <Trophy className="w-32 h-32" />
         </div>
-        <div className="relative z-10">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-baseline gap-2 mb-1">
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Hi, {studentName}!
-            </h1>
-            <div className={clsx("text-3xl sm:text-4xl font-black drop-shadow-md transition-colors duration-500", getHeroPercentColorClass(progressPercent))}>
-              {progressPercent}%
-            </div>
-          </div>
-
-          <p className="text-blue-100 text-sm sm:text-base mb-4">
-            พร้อมทำภารกิจประจำวันหรือยัง?
-          </p>
-
+        <div className="relative z-10 flex items-center gap-4 sm:gap-6">
           {/* Integrated Progress Bar */}
-          <div className="w-full bg-black/20 backdrop-blur-xs rounded-full h-6 shadow-inner relative mt-2">
+          <div className="flex-1 min-w-0 bg-black/20 backdrop-blur-xs rounded-full h-6 shadow-inner relative mr-3">
             <div
               className={clsx(
                 "h-full rounded-full transition-all duration-1000 ease-out flex items-center justify-end relative",
@@ -212,107 +261,107 @@ export default function DashboardOverview() {
               )}
             </div>
           </div>
+          <div className={clsx("text-3xl sm:text-4xl font-black drop-shadow-md transition-colors duration-500 shrink-0", getHeroPercentColorClass(progressPercent))}>
+            {progressPercent}%
+          </div>
         </div>
       </div>
 
       {/* 3 Stats Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 md:gap-6 divide-y divide-[#e2e8f0] md:divide-y-0">
 
         {/* 1. Total Tasks Card */}
-        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden group hover:border-[#597ecf]/40 transition-all">
-          <div className="absolute -right-4 -bottom-4 text-[#597ecf] opacity-[0.06] group-hover:scale-105 transition-transform">
-            <ListTodo className="w-36 h-36" />
-          </div>
-          <div className="relative z-10">
-            <div className="flex items-center">
-              <div className="w-9 h-9 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center mr-3 shrink-0 shadow-2xs">
-                <ListTodo className="w-5 h-5" />
+        <div className="py-5 md:py-2 flex flex-col justify-between">
+          {/* ซ้าย: หัวข้อ + ป้าย / ขวาของหัวข้อ (ไม่ชิดขอบ ตรงแนวกันทุกชุด): ตัวเลข
+              มือถือและจอกว้าง = วางข้างกัน, จอย่อ/iPad (3 คอลัมน์แคบ) = เรียงลงมาจัดกลาง: หัวข้อ, ตัวเลข, ป้าย */}
+          <div className="relative z-10 grid grid-cols-[13rem_auto] md:grid-cols-1 md:justify-items-center xl:grid-cols-[13rem_auto] xl:justify-items-start items-center gap-x-6 gap-y-3">
+            <div className="min-w-0 md:contents xl:block">
+              <div className="flex items-center">
+                <div className="w-9 h-9 rounded-xl bg-[#eef3fc] text-[#597ecf] flex items-center justify-center mr-3 shrink-0 shadow-2xs">
+                  <ListTodo className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">ภารกิจทั้งหมด</h3>
+                  <p className="text-gray-500 text-xs mt-0.5">งานที่ได้รับมอบหมาย</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900">ภารกิจทั้งหมด</h3>
-                <p className="text-gray-500 text-xs mt-0.5">งานที่ได้รับมอบหมาย</p>
+              {/* Breakdown Sub-row with Monotone Icons */}
+              <div className="mt-3 md:mt-0 md:order-last xl:mt-3 xl:order-none flex items-center md:justify-center xl:justify-start gap-2 text-xs font-semibold text-gray-600 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
+                  <CheckSquare className="w-3.5 h-3.5 text-[#597ecf]" />
+                  ชีตครู: <strong className="text-gray-900">{officialTotal}</strong>
+                </span>
               </div>
             </div>
-
-            <div className="mt-4 flex items-baseline">
+            <div className="flex items-baseline shrink-0">
               <span className="text-4xl sm:text-5xl font-black text-[#597ecf]">{totalTasks}</span>
               <span className="ml-2 text-sm sm:text-base font-semibold text-gray-400">งาน</span>
-            </div>
-
-            {/* Breakdown Sub-row with Monotone Icons */}
-            <div className="mt-4 pt-3 border-t border-[#e2e8f0] flex items-center gap-2 text-xs font-semibold text-gray-600 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <CheckSquare className="w-3.5 h-3.5 text-[#597ecf]" />
-                ชีตครู: <strong className="text-gray-900">{officialTotal}</strong>
-              </span>
             </div>
           </div>
         </div>
 
         {/* 2. Pending Tasks Card */}
-        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden group hover:border-amber-300 transition-all">
-          <div className="absolute -right-4 -bottom-4 text-amber-500 opacity-[0.06] group-hover:scale-105 transition-transform">
-            <Flame className="w-36 h-36" />
-          </div>
-          <div className="relative z-10">
-            <div className="flex items-center">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mr-3 shrink-0 shadow-2xs">
-                <Flame className="w-5 h-5" />
+        <div className="py-5 md:py-2 flex flex-col justify-between">
+          {/* ซ้าย: หัวข้อ + ป้าย / ขวาของหัวข้อ (ไม่ชิดขอบ ตรงแนวกันทุกชุด): ตัวเลข
+              มือถือและจอกว้าง = วางข้างกัน, จอย่อ/iPad (3 คอลัมน์แคบ) = เรียงลงมาจัดกลาง: หัวข้อ, ตัวเลข, ป้าย */}
+          <div className="relative z-10 grid grid-cols-[13rem_auto] md:grid-cols-1 md:justify-items-center xl:grid-cols-[13rem_auto] xl:justify-items-start items-center gap-x-6 gap-y-3">
+            <div className="min-w-0 md:contents xl:block">
+              <div className="flex items-center">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mr-3 shrink-0 shadow-2xs">
+                  <Flame className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">ภารกิจที่ต้องเคลียร์!</h3>
+                  <p className="text-gray-500 text-xs mt-0.5">งานที่ครูยังไม่ติ๊ก</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900">ภารกิจที่ต้องเคลียร์!</h3>
-                <p className="text-gray-500 text-xs mt-0.5">งานที่ครูยังไม่ติ๊ก</p>
+              {/* Breakdown Sub-row with Monotone Icons */}
+              <div className="mt-3 md:mt-0 md:order-last xl:mt-3 xl:order-none flex items-center md:justify-center xl:justify-start gap-2 text-xs font-semibold text-gray-600 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
+                  <Clock className="w-3.5 h-3.5 text-[#597ecf]" />
+                  ทำเสร็จ รอครูติ๊ก: <strong className="text-gray-900">{waitingCount}</strong>
+                </span>
+                {waitTooLongCount > 0 && (
+                  <Link href="/homework" className="inline-flex items-center gap-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-700">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    รอเกิน {WAIT_ALERT_DAYS} วัน: <strong>{waitTooLongCount}</strong>
+                  </Link>
+                )}
               </div>
             </div>
-
-            <div className="mt-4 flex items-baseline">
+            <div className="flex items-baseline shrink-0">
               <span className="text-4xl sm:text-5xl font-black text-amber-600">{pendingTasks}</span>
               <span className="ml-2 text-sm sm:text-base font-semibold text-gray-400">งาน</span>
-            </div>
-
-            {/* Breakdown Sub-row with Monotone Icons */}
-            <div className="mt-4 pt-3 border-t border-[#e2e8f0] flex items-center gap-2 text-xs font-semibold text-gray-600 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <Clock className="w-3.5 h-3.5 text-[#597ecf]" />
-                ทำเสร็จ รอครูติ๊ก: <strong className="text-gray-900">{waitingCount}</strong>
-              </span>
-              {waitTooLongCount > 0 && (
-                <Link href="/homework" className="inline-flex items-center gap-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-700">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                  รอเกิน {WAIT_ALERT_DAYS} วัน: <strong>{waitTooLongCount}</strong>
-                </Link>
-              )}
             </div>
           </div>
         </div>
 
         {/* 3. Done Stats Card */}
-        <div className="bg-white border border-[#e2e8f0] rounded-3xl p-6 shadow-xs flex flex-col justify-between relative overflow-hidden group hover:border-[#57627a]/40 transition-all">
-          <div className="absolute -right-4 -bottom-4 text-[#57627a] opacity-[0.06] group-hover:scale-105 transition-transform">
-            <Star className="w-36 h-36" />
-          </div>
-          <div className="relative z-10">
-            <div className="flex items-center">
-              <div className="w-9 h-9 rounded-xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center mr-3 shrink-0 shadow-2xs">
-                <Star className="w-5 h-5" />
+        <div className="py-5 md:py-2 flex flex-col justify-between">
+          {/* ซ้าย: หัวข้อ + ป้าย / ขวาของหัวข้อ (ไม่ชิดขอบ ตรงแนวกันทุกชุด): ตัวเลข
+              มือถือและจอกว้าง = วางข้างกัน, จอย่อ/iPad (3 คอลัมน์แคบ) = เรียงลงมาจัดกลาง: หัวข้อ, ตัวเลข, ป้าย */}
+          <div className="relative z-10 grid grid-cols-[13rem_auto] md:grid-cols-1 md:justify-items-center xl:grid-cols-[13rem_auto] xl:justify-items-start items-center gap-x-6 gap-y-3">
+            <div className="min-w-0 md:contents xl:block">
+              <div className="flex items-center">
+                <div className="w-9 h-9 rounded-xl bg-[#eff2f7] text-[#57627a] flex items-center justify-center mr-3 shrink-0 shadow-2xs">
+                  <Star className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">เก็บดาวได้แล้ว</h3>
+                  <p className="text-gray-500 text-xs mt-0.5">งานที่ครูติ๊กแล้ว</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900">เก็บดาวได้แล้ว</h3>
-                <p className="text-gray-500 text-xs mt-0.5">งานที่ครูติ๊กแล้ว</p>
+              {/* Breakdown Sub-row with Monotone Icons */}
+              <div className="mt-3 md:mt-0 md:order-last xl:mt-3 xl:order-none flex items-center md:justify-center xl:justify-start gap-2 text-xs font-semibold text-gray-600 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
+                  <CheckSquare className="w-3.5 h-3.5 text-[#57627a]" />
+                  ชีตครู: <strong className="text-gray-900">{officialCompleted}</strong>
+                </span>
               </div>
             </div>
-
-            <div className="mt-4 flex items-baseline">
+            <div className="flex items-baseline shrink-0">
               <span className="text-4xl sm:text-5xl font-black text-[#57627a]">{completedTasks}</span>
               <span className="ml-2 text-sm sm:text-base font-semibold text-gray-400">งาน</span>
-            </div>
-
-            {/* Breakdown Sub-row with Monotone Icons */}
-            <div className="mt-4 pt-3 border-t border-[#e2e8f0] flex items-center gap-2 text-xs font-semibold text-gray-600 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 bg-[#f4f7fa] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
-                <CheckSquare className="w-3.5 h-3.5 text-[#57627a]" />
-                ชีตครู: <strong className="text-gray-900">{officialCompleted}</strong>
-              </span>
             </div>
           </div>
         </div>
@@ -321,14 +370,28 @@ export default function DashboardOverview() {
 
       {/* Subject Progress Cards (งานจากชีตครู) */}
       <div className="mt-8">
-        <h2 className="text-xl font-bold text-gray-800 flex items-center mb-6">
-          <BookOpen className="w-6 h-6 text-[#597ecf] mr-2" />
-          ความคืบหน้ารายวิชา
-        </h2>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center">
+            <BookOpen className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
+            ความคืบหน้ารายวิชา
+          </h2>
+          <button
+            onClick={handleSyncFromTeacher}
+            disabled={syncing}
+            aria-label="อัปเดตข้อมูลจากครู"
+            title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
+            className="h-11 w-11 sm:w-auto sm:px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <RefreshCcw className={clsx("w-4 h-4 sm:mr-2", syncing && "animate-spin")} />
+            <span className="hidden sm:inline">{syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}</span>
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {subjects.map(subject => {
             const stats = subjectStats[subject];
             const pendingCount = stats.total - stats.done;
+            const waitingDotCount = stats.dots.filter(d => d.kind === 'waiting').length;
+            const todoCount = pendingCount - waitingDotCount;
             const overallPercent = stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100);
 
             const officialPercent = stats.officialTotal === 0 ? 100 : Math.round((stats.officialDone / stats.officialTotal) * 100);
@@ -357,14 +420,21 @@ export default function DashboardOverview() {
                     )}>
                       {subject}
                     </h3>
-                    <div className={clsx("text-xs mt-0.5 font-medium flex items-center gap-1.5", !isCompleted ? "text-gray-500" : "text-emerald-100")}>
+                    <div className={clsx("text-xs mt-0.5 font-medium flex flex-wrap items-center gap-x-1.5", !isCompleted ? "text-gray-500" : "text-emerald-100")}>
                       <span>ทั้งหมด {stats.total} งาน</span>
                       <span>•</span>
                       <span className={!isCompleted ? "text-emerald-600 font-semibold" : "text-white font-semibold"}>เสร็จ {stats.done}</span>
-                      {pendingCount > 0 && (
+                      {/* ค้าง = ยังไม่ทำ / รอครูติ๊ก = ทำเสร็จแล้วแต่ครูยังไม่ติ๊ก (แยกกัน สีตรงกับวงกลมใต้แถบ) */}
+                      {todoCount > 0 && (
                         <>
                           <span>•</span>
-                          <span className="text-orange-500 font-bold">ค้าง {pendingCount}</span>
+                          <span className="text-orange-500 font-bold">ค้าง {todoCount}</span>
+                        </>
+                      )}
+                      {waitingDotCount > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-sky-600 font-bold">รอครูติ๊ก {waitingDotCount}</span>
                         </>
                       )}
                     </div>
@@ -408,6 +478,21 @@ export default function DashboardOverview() {
                         )}
                       </div>
                     </div>
+
+                    {/* วงกลมงานที่ครูยังไม่ติ๊ก: แดง = ยังไม่ทำเกิน 3 วัน, เหลือง = ยังไม่ทำ, ฟ้า = รอครูติ๊ก */}
+                    {stats.dots.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-3" role="list" aria-label="งานที่ครูยังไม่ติ๊ก">
+                        {[...stats.dots].sort((a, b) => DOT_ORDER[a.kind] - DOT_ORDER[b.kind]).map((d, i) => (
+                          <span
+                            key={i}
+                            role="listitem"
+                            title={`${d.name} — ${DOT_STYLE[d.kind].label}`}
+                            aria-label={`${d.name}: ${DOT_STYLE[d.kind].label}`}
+                            className={clsx("w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs", DOT_STYLE[d.kind].cls)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                 </div>

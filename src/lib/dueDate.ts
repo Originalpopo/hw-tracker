@@ -27,6 +27,26 @@ export function thaiShortDate(due: string | undefined | null): string {
   return `${TH_DAYS[d.getDay()]} ${d.getDate()} ${TH_MONTHS[d.getMonth()]}`;
 }
 
+/**
+ * วันที่ครูสั่งงาน (ms, เวลาเที่ยงคืนตามเครื่อง) หาได้จาก 3 ที่ เรียงตามความน่าเชื่อถือ:
+ * 1) "วันที่มอบหมาย" ที่กรอกเองในการ์ดงาน (YYYY-MM-DD)
+ * 2) วันที่ที่ครูเขียนไว้ในชื่องาน เช่น "แบบฝึกหัด 6.4 (6/11/2569)" - ปี พ.ศ. แปลงเป็น ค.ศ. ให้
+ * 3) วันที่ระบบเห็นงานนี้ในชีตครูครั้งแรก (first_seen_at)
+ * ไม่มีเลย -> 0
+ */
+export function assignedAt(opts: { assignedDate?: string | null; taskName?: string | null; firstSeenAt?: number | null }): number {
+  const fromField = parseDue(opts.assignedDate);
+  if (fromField) return fromField.getTime();
+  const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(opts.taskName || '');
+  if (m) {
+    let y = Number(m[3]);
+    if (y > 2400) y -= 543;
+    const d = new Date(y, Number(m[2]) - 1, Number(m[1]));
+    if (!isNaN(d.getTime()) && d.getDate() === Number(m[1])) return d.getTime();
+  }
+  return opts.firstSeenAt || 0;
+}
+
 export type DueTone = 'overdue' | 'soon' | 'later';
 
 /** ป้ายบนการ์ด: เลยกำหนด / ส่งวันนี้ / ส่งพรุ่งนี้ / อีก N วัน */

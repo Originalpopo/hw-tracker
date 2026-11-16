@@ -29,7 +29,7 @@ export default function Navigation({ isCollapsed, setIsCollapsed }: { isCollapse
   return (
     <>
       {/* Desktop Sidebar & Mobile Top Header wrapper */}
-      <nav className={clsx("bg-white md:fixed md:inset-y-0 md:left-0 md:border-r md:border-gray-200 md:shadow-none shadow-sm sticky top-0 z-10 print:hidden md:flex md:flex-col transition-all duration-300", isCollapsed ? "md:w-20" : "md:w-64")}>
+      <nav className={clsx("bg-white md:fixed md:inset-y-0 md:left-0 md:border-r md:border-gray-200 md:shadow-none shadow-sm sticky top-0 z-40 print:hidden md:flex md:flex-col transition-all duration-300", isCollapsed ? "md:w-20" : "md:w-64")}>
         <div className="md:flex-1 md:flex md:flex-col md:px-4 md:py-6 h-16 md:h-auto flex items-center md:items-stretch px-4 sm:px-6">
           <div className={clsx("flex-shrink-0 flex items-center md:mb-8 transition-all", isCollapsed ? "md:justify-center" : "")}>
             <button 
