@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getTeacherColumns, TeacherColumn, getChildTasks, ChildTask, getGlobalSettings } from '@/lib/db';
 import Link from 'next/link';
+import NameLoading from '@/components/NameLoading';
 import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, waitingDays, waitingSince } from '@/lib/homeworkRules';
 import { ArrowLeft, Printer, Filter } from 'lucide-react';
@@ -11,6 +12,8 @@ export default function PrintPendingPage() {
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [childTasks, setChildTasks] = useState<ChildTask[]>([]);
   const [studentName, setStudentName] = useState<string | null>(null);
+  // true = รู้แล้วว่ามีชื่อนักเรียนหรือไม่ (ก่อนหน้านั้นแสดง "กำลังโหลด" ไม่ใช่หน้าตั้งค่า)
+  const [nameReady, setNameReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filterSubject, setFilterSubject] = useState<string>('All');
 
@@ -25,6 +28,7 @@ export default function PrintPendingPage() {
           localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
         }
       }
+      setNameReady(true);
       if (name) {
         setStudentName(name);
         loadData(name);
@@ -97,6 +101,7 @@ export default function PrintPendingPage() {
     return <div className="p-8 text-center text-gray-500 font-medium">กำลังเตรียมข้อมูลสำหรับพิมพ์...</div>;
   }
 
+  if (!studentName && !nameReady) return <NameLoading />;
   if (!studentName) {
     return <div className="p-8 text-center text-gray-500 font-medium">กรุณาตั้งค่าชื่อนักเรียนก่อน</div>;
   }

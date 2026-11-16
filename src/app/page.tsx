@@ -7,6 +7,7 @@ import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong } from '@/lib/homew
 import { Trophy, Star, Flame, Zap, BookOpen, ListTodo, CheckSquare, FileText, Clock, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
+import NameLoading from '@/components/NameLoading';
 import confetti from 'canvas-confetti';
 
 interface SubjectStatDetail {
@@ -20,6 +21,8 @@ export default function DashboardOverview() {
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [studentName, setStudentName] = useState<string | null>(null);
+  // true = รู้แล้วว่ามีชื่อนักเรียนหรือไม่ (ก่อนหน้านั้นแสดง "กำลังโหลด" ไม่ใช่หน้าตั้งค่า)
+  const [nameReady, setNameReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [animateBars, setAnimateBars] = useState(false);
 
@@ -34,6 +37,7 @@ export default function DashboardOverview() {
           localStorage.setItem('hw_sheet_urls', globalSettings.sheet_urls);
         }
       }
+      setNameReady(true);
       if (name) {
         setStudentName(name);
         loadData(name);
@@ -124,6 +128,7 @@ export default function DashboardOverview() {
     }
   }, [progressPercent, totalTasks]);
 
+  if (!studentName && !nameReady) return <NameLoading />;
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">

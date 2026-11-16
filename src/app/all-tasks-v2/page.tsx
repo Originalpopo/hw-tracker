@@ -24,6 +24,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
+import NameLoading from '@/components/NameLoading';
 import { isHomeworkDemoUrl, getHomeworkDemo } from '@/lib/homeworkDemo';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong, waitingDays } from '@/lib/homeworkRules';
 import { clsx } from 'clsx';
@@ -50,6 +51,8 @@ const getTodayDateString = () => {
 
 export default function AllTasksV2Page() {
   const [studentName, setStudentName] = useState<string | null>(null);
+  // true = รู้แล้วว่ามีชื่อนักเรียนหรือไม่ (ก่อนหน้านั้นแสดง "กำลังโหลด" ไม่ใช่หน้าตั้งค่า)
+  const [nameReady, setNameReady] = useState(false);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [childTasks, setChildTasks] = useState<ChildTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +103,9 @@ export default function AllTasksV2Page() {
       }
 
 
+      // มีชื่อจำไว้ในเครื่องแล้ว = แสดงหน้าได้ทันที แล้วค่อยเช็คกับ Firestore ตามหลัง
+      if (savedName) { setStudentName(savedName); setNameReady(true); }
+
       const globalSettings = await getGlobalSettings();
       if (globalSettings) {
         savedName = globalSettings.student_name || savedName;
@@ -109,6 +115,7 @@ export default function AllTasksV2Page() {
       }
 
       setStudentName(savedName || null);
+      setNameReady(true);
 
       let urls: string[] = [];
       if (savedUrlsStr) {
@@ -331,6 +338,7 @@ export default function AllTasksV2Page() {
   // Counts for toggle buttons
   const countOfficialPending = officialStats.totalCount - officialStats.checkedCount;
 
+  if (!studentName && !nameReady) return <NameLoading />;
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
