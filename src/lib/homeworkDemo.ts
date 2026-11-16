@@ -32,6 +32,14 @@ const ROWS: [string, string, boolean, TaskStatus | null, number?][] = [
   ['วิทยาศาสตร์', 'สมุดบันทึกการทดลอง (สถานะ "ทำเสร็จ รอส่ง" จากระบบเดิม 8 วัน - ต้องเตือน)', false, 'Done', 8],
 ];
 
+/** กำหนดส่งสมมติ: แถวที่ -> อีกกี่วันถึงวันส่ง (ติดลบ = เลยกำหนด) */
+const DUE_IN_DAYS: Record<number, number> = { 1: -3, 4: 0, 5: 1, 6: 4, 9: 2 };
+
+function localDate(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function getHomeworkDemo(studentName: string): { cols: TeacherColumn[]; tasks: ChildTask[] } {
   const now = new Date();
   const cols: TeacherColumn[] = [];
@@ -45,6 +53,7 @@ export function getHomeworkDemo(studentName: string): { cols: TeacherColumn[]; t
         id: `demo_task_${i}`, subject, task_name: name, status,
         created_at: new Date(now.getTime() - 20 * DAY), updated_at: doneAt ? new Date(doneAt) : now,
         teacher_column_id: id, student_name: studentName, task_type: 'official',
+        ...(i in DUE_IN_DAYS ? { due_date: localDate(now.getTime() + DUE_IN_DAYS[i] * DAY) } : {}),
         revision_history: doneAt
           ? [{ revision: 1, action: status === 'Done' ? 'parent_reviewed' : 'submitted', note: 'ข้อมูลสมมติ', timestamp: doneAt }]
           : [],

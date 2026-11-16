@@ -5,10 +5,12 @@ import { Plus, BookOpen, Clock, CheckCircle, Send, AlertCircle, Sparkles, Edit2,
 import { ChildTask, TaskStatus, TeacherColumn, getChildTasks, updateChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import { clsx } from 'clsx';
 import Link from 'next/link';
+import NameLoading from '@/components/NameLoading';
 import { useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 import { isHomeworkDemo, getHomeworkDemo } from '@/lib/homeworkDemo';
 import { WAIT_ALERT_DAYS, isWaitingForTeacher, isWaitTooLong, waitingDays, waitingSince } from '@/lib/homeworkRules';
+import { daysUntilDue, thaiShortDate, dueBadge, DueTone } from '@/lib/dueDate';
 
 // Fallback teacher subjects (aligned with official teacher columns)
 const FALLBACK_TEACHER_SUBJECTS = [
@@ -35,6 +37,8 @@ function HomeworkDashboard() {
   const focusColId = searchParams.get('task');
 
   const [studentName, setStudentName] = useState<string | null>(null);
+  // true = รู้แล้วว่ามีชื่อนักเรียนหรือไม่ (ก่อนหน้านั้นแสดง "กำลังโหลด" ไม่ใช่หน้าตั้งค่า)
+  const [nameReady, setNameReady] = useState(false);
   const [tasks, setTasks] = useState<ChildTask[]>([]);
   const [teacherCols, setTeacherCols] = useState<TeacherColumn[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +84,9 @@ function HomeworkDashboard() {
       let savedName = localStorage.getItem('hw_student_name');
       let savedUrlsStr = localStorage.getItem('hw_sheet_urls');
 
+      // มีชื่อจำไว้ในเครื่องแล้ว = แสดงหน้าได้ทันที แล้วค่อยเช็คกับ Firestore ตามหลัง
+      if (savedName) { setStudentName(savedName); setNameReady(true); }
+
       const globalSettings = await getGlobalSettings();
       if (globalSettings) {
         savedName = globalSettings.student_name || savedName;
@@ -89,6 +96,7 @@ function HomeworkDashboard() {
       }
 
       setStudentName(savedName || null);
+      setNameReady(true);
 
       let urls: string[] = [];
       if (savedUrlsStr) {
@@ -308,6 +316,20 @@ function HomeworkDashboard() {
     });
   }, [tasks, filterSubject, teacherCols, uncheckedColIds]);
 
+  // ตัวเลขสรุปด้านบน: เลยกำหนด / ส่งวันนี้-พรุ่งนี้ (เฉพาะงานที่ยังไม่ทำ) / รอครูติ๊ก
+  const summary = useMemo(() => {
+    let overdue = 0, soon = 0, waiting = 0;
+    for (const t of filteredTasks) {
+      if (isWaitingForTeacher(t)) { waiting++; continue; }
+      const days = daysUntilDue(t.due_date);
+      if (days === null) continue;
+      if (days < 0) overdue++;
+      else if (days <= 1) soon++;
+    }
+    return { overdue, soon, waiting };
+  }, [filteredTasks]);
+
+  if (!studentName && !nameReady) return <NameLoading />;
   if (!studentName) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-in fade-in duration-700">
@@ -329,41 +351,49 @@ function HomeworkDashboard() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
 
       {/* Header section adhering to AGENTS.md Standard Page Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-6 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-4">
-        <div>
+      {/* มือถือ: หัวข้อ + ปุ่มอัปเดตแบบไอคอนอยู่บรรทัดเดียว ซ่อนคำอธิบาย / จอใหญ่: เหมือนเดิม */}
+      <div className="flex flex-row sm:flex-col lg:flex-row justify-between items-center sm:items-start lg:items-center bg-white p-4 sm:p-7 rounded-3xl border border-[#e2e8f0] shadow-sm gap-3 sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center">
             <BookOpen className="w-6 h-6 text-[#597ecf] mr-2 shrink-0" />
-            งานค้างจากครู (Pending Work)
+            งานค้างจากครู<span className="hidden sm:inline">&nbsp;(Pending Work)</span>
           </h1>
-          <p className="text-gray-500 mt-1 text-sm sm:text-base">งานที่ครูยังไม่ได้ติ๊กในชีตของ {studentName} ทำเสร็จแล้วกด &quot;ทำเสร็จแล้ว&quot; งานจะไปรอครูติ๊ก ถ้าเกิน {WAIT_ALERT_DAYS} วันครูยังไม่ติ๊กจะขึ้นเตือน</p>
+          <p className="hidden sm:block text-gray-500 mt-1 text-sm sm:text-base">งานที่ครูยังไม่ได้ติ๊กในชีตของ {studentName} ทำเสร็จแล้วกด &quot;ทำเสร็จแล้ว&quot; งานจะไปรอครูติ๊ก ถ้าเกิน {WAIT_ALERT_DAYS} วันครูยังไม่ติ๊กจะขึ้นเตือน</p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto lg:shrink-0">
-          <button
-            onClick={handleSyncFromTeacher}
-            disabled={syncing}
-            className="h-[42px] px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer whitespace-nowrap shrink-0"
-            title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
-          >
-            <RefreshCcw className={clsx("w-4 h-4 mr-2", syncing && "animate-spin")} />
-            {syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}
-          </button>
-        </div>
+        <button
+          onClick={handleSyncFromTeacher}
+          disabled={syncing}
+          aria-label="อัปเดตข้อมูลจากครู"
+          className="h-11 w-11 sm:w-full lg:w-auto sm:px-4 rounded-xl text-sm font-semibold bg-[#597ecf] text-white hover:bg-[#486cb8] flex items-center justify-center shadow-xs hover:shadow-md active:scale-95 transition-all disabled:opacity-50 cursor-pointer whitespace-nowrap shrink-0"
+          title="อัปเดตข้อมูลการบ้านทั้งหมดจาก Google Sheet ของครู"
+        >
+          <RefreshCcw className={clsx("w-4 h-4 sm:mr-2", syncing && "animate-spin")} />
+          <span className="hidden sm:inline">{syncing ? 'กำลังดึงข้อมูล...' : 'อัปเดตข้อมูลจากครู'}</span>
+        </button>
       </div>
 
       {/* Filter Toolbar Card */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-[#e2e8f0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <span className="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap bg-[#597ecf] text-white shadow-xs">
-            <CheckSquare className="w-4 h-4" />
-            <span>งานค้างจากครู</span>
-            <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-white/20 text-white">
-              {countOfficial}
-            </span>
-          </span>
+        <div className="flex flex-col gap-2 w-full md:w-auto">
+          {/* ตัวเลขสรุป 3 ช่อง (นับตามวิชาที่เลือกอยู่) */}
+          <div className="grid grid-cols-3 gap-2 md:w-[380px]">
+            <div className="bg-rose-50 rounded-xl px-2 py-2.5 text-center">
+              <div className="text-2xl font-extrabold text-rose-700 leading-tight">{summary.overdue}</div>
+              <div className="text-[11px] sm:text-xs font-semibold text-rose-800">เลยกำหนด</div>
+            </div>
+            <div className="bg-amber-50 rounded-xl px-2 py-2.5 text-center">
+              <div className="text-2xl font-extrabold text-amber-700 leading-tight">{summary.soon}</div>
+              <div className="text-[11px] sm:text-xs font-semibold text-amber-800">ส่งวันนี้/พรุ่งนี้</div>
+            </div>
+            <div className="bg-[#eef3fc] rounded-xl px-2 py-2.5 text-center">
+              <div className="text-2xl font-extrabold text-[#486cb8] leading-tight">{summary.waiting}</div>
+              <div className="text-[11px] sm:text-xs font-semibold text-[#3b5a9e]">รอครูติ๊ก</div>
+            </div>
+          </div>
           {countWaitTooLong > 0 && (
-            <span className="px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200">
-              <AlertTriangle className="w-4 h-4" />
+            <span className="px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
               รอครูติ๊กเกิน {WAIT_ALERT_DAYS} วัน: {countWaitTooLong}
             </span>
           )}
@@ -423,18 +453,25 @@ function HomeworkDashboard() {
             headerColor="bg-[#eff2f7]"
           >
             {(task: ChildTask) => (
-              <TaskCard key={task.id} task={task} highlighted={task.teacher_column_id === focusColId} onUpdate={handleUpdateStatus} onUpdateTask={handleUpdateTask}>
+              <TaskCard
+                key={task.id}
+                task={task}
+                highlighted={task.teacher_column_id === focusColId}
+                onUpdate={handleUpdateStatus}
+                onUpdateTask={handleUpdateTask}
+                badge={(() => { const d = daysUntilDue(task.due_date); return d === null ? undefined : dueBadge(d); })()}
+              >
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => handleUpdateStatus(task.id!, 'Submitted')}
                     className={clsx(
-                      "flex-1 px-3.5 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer",
+                      "flex-1 h-12 px-4 rounded-xl text-base font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer",
                       task.status === 'Rework'
                         ? "bg-rose-600 hover:bg-rose-700 text-white"
-                        : "bg-[#597ecf] hover:bg-[#486cb8] text-white"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
                     )}
                   >
-                    <CheckCircle className="w-4 h-4" />
+                    <CheckCircle className="w-5 h-5" />
                     {task.status === 'Rework' ? 'แก้ไขเสร็จแล้ว' : 'ทำเสร็จแล้ว'}
                   </button>
                 </div>
@@ -462,6 +499,7 @@ function HomeworkDashboard() {
                   onUpdate={handleUpdateStatus}
                   onUpdateTask={handleUpdateTask}
                   onUndo={(t: any) => handleUpdateStatus(t.id, 'Todo')}
+                  badge={{ label: days === 0 ? 'รอวันนี้' : `รอ ${days} วัน`, tone: tooLong ? 'overdue' : 'later' }}
                 >
                   <div className="mt-3 mb-1">
                     <div className={clsx(
@@ -535,7 +573,13 @@ function TaskColumn({ title, icon, tasks, children, bgColor, borderColor, header
   );
 }
 
-function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
+const BADGE_TONE: Record<DueTone, string> = {
+  overdue: 'bg-rose-600 text-white',
+  soon: 'bg-amber-100 text-amber-800',
+  later: 'bg-gray-100 text-gray-600',
+};
+
+function TaskCard({ task, children, onUpdateTask, onUndo, highlighted, badge }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editAssignedDate, setEditAssignedDate] = useState(task.assigned_date || task.date || '');
   const [editDueDate, setEditDueDate] = useState(task.due_date || '');
@@ -564,24 +608,24 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
     setIsEditing(false);
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
-
   return (
     <div
       id={task.teacher_column_id ? `task-${task.teacher_column_id}` : undefined}
       className={clsx(
         "bg-white p-4 rounded-2xl shadow-xs border hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden group scroll-mt-24",
-        highlighted ? "border-[#597ecf] ring-4 ring-[#597ecf]/30" : "border-[#e2e8f0]"
+        highlighted ? "border-[#597ecf] ring-4 ring-[#597ecf]/30"
+          : badge?.tone === 'overdue' ? "border-rose-200"
+          : badge?.tone === 'soon' ? "border-amber-200"
+          : "border-[#e2e8f0]"
       )}
     >
-      {task.status === 'Rework' && (
-        <div className="absolute top-0 right-0 bg-rose-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-bl-xl z-10 shadow-xs pointer-events-none flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" /> ต้องแก้!
-        </div>
-      )}
-
       <div className="flex justify-between items-start mb-2.5 gap-1">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {task.status === 'Rework' && (
+            <span className="text-[10px] font-extrabold text-white bg-rose-600 px-2 py-0.5 rounded-md flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> ต้องแก้!
+            </span>
+          )}
           <span className="text-xs font-bold text-[#597ecf] bg-[#eef3fc] px-2.5 py-0.5 rounded-lg border border-[#597ecf]/20">
             {task.subject}
           </span>
@@ -605,6 +649,12 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
           )}
         </div>
 
+        <div className="flex items-center gap-1 shrink-0">
+        {badge && (
+          <span className={clsx("text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap", BADGE_TONE[badge.tone as DueTone])}>
+            {badge.label}
+          </span>
+        )}
         {!isEditing && (
           <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity bg-white pl-1">
             {onUndo && (
@@ -632,6 +682,7 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {isEditing ? (
@@ -735,23 +786,16 @@ function TaskCard({ task, children, onUpdateTask, onUndo, highlighted }: any) {
         </div>
       ) : (
         <div className="mb-2">
-          <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.task_name}</p>
+          <p className="text-[15px] font-semibold text-gray-900 line-clamp-2">{task.task_name}</p>
 
           {(task.assigned_date || task.due_date || task.date || task.note) && (
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-1.5 text-xs text-gray-500">
               <div className="flex items-center gap-2 flex-wrap text-[11px]">
                 {(task.assigned_date || task.date) && (
-                  <span className="text-gray-500">มอบหมาย: <strong className="text-gray-700 font-medium">{task.assigned_date || task.date}</strong></span>
+                  <span className="text-gray-500">มอบหมาย <strong className="text-gray-700 font-medium">{thaiShortDate(task.assigned_date || task.date)}</strong></span>
                 )}
                 {task.due_date && (
-                  <span className={clsx(
-                    "font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded-md",
-                    !['Verified', 'Done', 'Submitted'].includes(task.status) && task.due_date < todayStr
-                      ? "bg-rose-50 text-rose-600 border border-rose-200"
-                      : "text-[#597ecf] bg-[#eef3fc]"
-                  )}>
-                    ส่ง: {task.due_date}
-                  </span>
+                  <span className="text-gray-500">ส่ง <strong className="text-gray-700 font-semibold">{thaiShortDate(task.due_date)}</strong></span>
                 )}
                 {!task.assigned_date && !task.due_date && task.date && (
                   <span className="text-gray-400">{task.date}</span>
