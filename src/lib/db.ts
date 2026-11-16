@@ -10,6 +10,7 @@ import {
   query, 
   where,
   setDoc,
+  writeBatch,
   serverTimestamp,
   Timestamp
 } from "firebase/firestore";
@@ -164,6 +165,26 @@ export async function clearTeacherColumnsForStudent(studentName: string) {
   const querySnapshot = await getDocs(q);
   const deletePromises = querySnapshot.docs.map(d => deleteDoc(d.ref));
   await Promise.all(deletePromises);
+}
+
+/**
+ * แทนที่คอลัมน์งานครูทั้งหมดของนักเรียนคนนี้ด้วยชุดใหม่ ในการบันทึกครั้งเดียว (batch)
+ * ผลเหมือน "ลบทั้งหมดแล้วบันทึกใหม่ทีละอัน" แต่เร็วกว่ามาก และไม่มีช่วงที่งานหายไปชั่วคราวระหว่างบันทึก
+ * (Firestore รับได้ 500 คำสั่งต่อ batch - แบ่งเป็นหลาย batch ถ้าเกิน)
+ */
+export async function replaceTeacherColumnsForStudent(studentName: string, columns: TeacherColumn[]) {
+  if (!studentName) return;
+  const snap = await getDocs(query(collection(db, TEACHER_COLUMNS_COLLECTION), where("student_name", "==", studentName)));
+  const keepIds = new Set(columns.map(c => c.id));
+  const ops: ((b: ReturnType<typeof writeBatch>) => void)[] = [
+    ...snap.docs.filter(d => !keepIds.has(d.id)).map(d => (b: ReturnType<typeof writeBatch>) => { b.delete(d.ref); }),
+    ...columns.map(c => (b: ReturnType<typeof writeBatch>) => { b.set(doc(db, TEACHER_COLUMNS_COLLECTION, c.id), c); }),
+  ];
+  for (let i = 0; i < ops.length; i += 450) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + 450).forEach(op => op(batch));
+    await batch.commit();
+  }
 }
 
 /**

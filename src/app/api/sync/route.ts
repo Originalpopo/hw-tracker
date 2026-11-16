@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchGoogleSheetData, extractTeacherTasksForStudent, getSheetKey, teacherColumnIdPrefix } from '@/lib/googleSheets';
-import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
+import { replaceTeacherColumnsForStudent, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
 import type { TeacherColumn } from '@/lib/db';
 
 export async function POST(request: Request) {
@@ -31,9 +31,18 @@ export async function POST(request: Request) {
     // ชีทที่ดึงงานไม่สำเร็จรอบนี้ -> เก็บงานเดิมของชีทนั้นไว้ (ไม่ลบทิ้ง) งานจะได้ไม่หายจากหน้างานค้าง
     const keepOldSheetUrls = new Set<string>();
 
-    for (const url of sheetUrls) {
+    // ดึงทุกชีทพร้อมกัน (แต่ละชีทใช้เวลารอ Google ~1 วินาที - ดึงทีละชีทต่อกัน 15 วิชาเคยใช้ ~17 วินาที)
+    // ระหว่างนั้นอ่านคอลัมน์เดิมจาก Firestore ไปพร้อมกันด้วย
+    const existingColumnsPromise = getTeacherColumns(studentName);
+    const fetchResults = await Promise.allSettled(sheetUrls.map((url: string) => fetchGoogleSheetData(url)));
+
+    // ไล่ผลตามลำดับชีทในการตั้งค่า (ลำดับเดิม)
+    for (let i = 0; i < sheetUrls.length; i++) {
+      const url: string = sheetUrls[i];
+      const settled = fetchResults[i];
       try {
-        const result = await fetchGoogleSheetData(url);
+        if (settled.status === 'rejected') throw settled.reason;
+        const result = settled.value;
         if (result && result.data && result.data.length > 0) {
           const a1 = (result.data[0][0] || '').trim();
           fetchedSheets.push({ data: result.data, tabName: result.sheetName, a1, url });
@@ -76,7 +85,7 @@ export async function POST(request: Request) {
     }
 
     // Fetch existing columns to preserve first_seen_at
-    const existingColumns = await getTeacherColumns(studentName);
+    const existingColumns = await existingColumnsPromise;
     const existingColMap = new Map(existingColumns.map(c => [c.id, c]));
     const usedExistingColIds = new Set<string>();
     const currentSyncTime = Date.now();
@@ -111,18 +120,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Clear old teacher columns to prevent duplicates when subjects or names change
-    await clearTeacherColumnsForStudent(studentName);
-
-    // Save to Firestore (งานที่ดึงได้รอบนี้ + งานเดิมของชีทที่ดึงไม่สำเร็จ)
-    for (const col of [...allTeacherCols, ...keptOldCols]) {
-      await syncTeacherColumn(col);
-    }
+    // แทนที่คอลัมน์เดิมทั้งหมด (กันซ้ำเวลาครูเปลี่ยนชื่อวิชา/ชื่องาน) ด้วย
+    // งานที่ดึงได้รอบนี้ + งานเดิมของชีทที่ดึงไม่สำเร็จ - บันทึกครั้งเดียว
+    await replaceTeacherColumnsForStudent(studentName, [...allTeacherCols, ...keptOldCols]);
 
     // Auto-Sync and Auto-Create ChildTasks based on synced columns
     try {
       const childTasks = await getChildTasks(studentName);
       const matchedTaskIds = new Set<string>();
+      // ตัดสินใจจับคู่ทีละงาน (ในหน่วยความจำ) แต่ส่งคำสั่งเขียนทั้งหมดพร้อมกันตอนท้าย
+      const writes: Promise<unknown>[] = [];
 
       for (const col of allTeacherCols) {
         // Find if a ChildTask already exists for this teacher column
@@ -174,11 +181,11 @@ export async function POST(request: Request) {
           }
 
           if (needsUpdate) {
-            await updateChildTask(linkedTask.id, updates);
+            writes.push(updateChildTask(linkedTask.id, updates));
           }
         } else {
           // Task does not exist yet -> Auto-create official ChildTask directly from teacher column!
-          await addChildTask({
+          writes.push(addChildTask({
             student_name: studentName,
             subject: col.subject,
             task_name: col.column_name,
@@ -187,9 +194,10 @@ export async function POST(request: Request) {
             status: col.is_checked ? 'Verified' : 'Todo',
             date: new Date().toISOString().split('T')[0],
             note: ''
-          });
+          }));
         }
       }
+      await Promise.all(writes);
     } catch (e) {
       console.error('Error updating child tasks statuses:', e);
     }
