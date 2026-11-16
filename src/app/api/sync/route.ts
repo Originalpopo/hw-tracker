@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { fetchGoogleSheetData, extractTeacherTasksForStudent, getSheetKey } from '@/lib/googleSheets';
+import { fetchGoogleSheetData, extractTeacherTasksForStudent, getSheetKey, teacherColumnIdPrefix } from '@/lib/googleSheets';
 import { syncTeacherColumn, clearTeacherColumnsForStudent, getChildTasks, updateChildTask, addChildTask, getTeacherColumns, getGlobalSettings } from '@/lib/db';
+import type { TeacherColumn } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
     const fetchedSheets: { data: string[][], tabName: string, a1: string, url: string }[] = [];
     const a1Counts: Record<string, number> = {};
     const failedSheets: { url: string; error: string }[] = [];
+    // ชีทที่ดึงงานไม่สำเร็จรอบนี้ -> เก็บงานเดิมของชีทนั้นไว้ (ไม่ลบทิ้ง) งานจะได้ไม่หายจากหน้างานค้าง
+    const keepOldSheetUrls = new Set<string>();
 
     for (const url of sheetUrls) {
       try {
@@ -38,10 +41,12 @@ export async function POST(request: Request) {
             a1Counts[a1] = (a1Counts[a1] || 0) + 1;
           }
         } else {
+          keepOldSheetUrls.add(url);
           failedSheets.push({ url, error: 'ไม่พบข้อมูลในชีทนี้ (ชีทว่างเปล่า)' });
         }
       } catch (e: any) {
         console.error('Error fetching sheet:', url, e);
+        keepOldSheetUrls.add(url);
         failedSheets.push({ url, error: e?.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ' });
       }
     }
@@ -55,9 +60,10 @@ export async function POST(request: Request) {
       }
       const { tasks: cols, match, reason } = extractTeacherTasksForStudent(sheet.data, studentName, finalSubject, rollNumber, getSheetKey(sheet.url));
       allTeacherCols.push(...cols);
+      if (reason !== 'ok') keepOldSheetUrls.add(sheet.url);
 
       if (reason === 'no_roster') {
-        failedSheets.push({ url: sheet.url, error: `ชีทวิชา "${finalSubject}" ไม่พบรายชื่อนักเรียนเลย (ไม่มีข้อมูลตั้งแต่แถวที่ 3 เป็นต้นไป) - รูปแบบชีทอาจต่างจากที่ระบบรองรับ` });
+        failedSheets.push({ url: sheet.url, error: `ชีทวิชา "${finalSubject}" ไม่พบรายชื่อนักเรียนเลย (หาแถวที่คอลัมน์ A เป็นเลขที่และ B เป็นชื่อไม่เจอ) - รูปแบบชีทอาจต่างจากที่ระบบรองรับ` });
       } else if (reason === 'no_task_header') {
         failedSheets.push({ url: sheet.url, error: `ชีทวิชา "${finalSubject}" มีรายชื่อนักเรียนแล้ว แต่ครูยังไม่ได้ลงชื่อภาระงานในแถวที่ 1 (คอลัมน์ C เป็นต้นไป) - ยังดึงงานไม่ได้จนกว่าครูจะเริ่มลงงาน` });
       } else if (reason === 'student_not_found') {
@@ -92,11 +98,24 @@ export async function POST(request: Request) {
       col.first_seen_at = existingCol?.first_seen_at || currentSyncTime;
     }
 
+    // งานเดิมของชีทที่ดึงไม่สำเร็จรอบนี้ - เก็บไว้ตามเดิม (ไม่นับซ้ำกับงานที่เพิ่งดึงได้)
+    const newColIds = new Set(allTeacherCols.map(c => c.id));
+    const keptOldCols: TeacherColumn[] = [];
+    for (const url of keepOldSheetUrls) {
+      const prefix = teacherColumnIdPrefix(studentName, getSheetKey(url));
+      const kept = existingColumns.filter(c => c.id && c.id.startsWith(prefix) && !newColIds.has(c.id));
+      if (kept.length > 0) {
+        keptOldCols.push(...kept);
+        kept.forEach(c => newColIds.add(c.id));
+        failedSheets.push({ url, error: `ใช้ข้อมูลงานเดิมของชีทนี้ไว้ก่อน (${kept.length} งาน) จนกว่าจะดึงได้สำเร็จ` });
+      }
+    }
+
     // Clear old teacher columns to prevent duplicates when subjects or names change
     await clearTeacherColumnsForStudent(studentName);
 
-    // Save to Firestore
-    for (const col of allTeacherCols) {
+    // Save to Firestore (งานที่ดึงได้รอบนี้ + งานเดิมของชีทที่ดึงไม่สำเร็จ)
+    for (const col of [...allTeacherCols, ...keptOldCols]) {
       await syncTeacherColumn(col);
     }
 

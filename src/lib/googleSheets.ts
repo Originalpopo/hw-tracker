@@ -6,14 +6,15 @@ import { TeacherColumn } from './db';
 // 0.4 ครอบคลุมพิมพ์ผิด/สลับตัวอักษร 1-2 ตัว แต่ยังกันชื่อคนอื่นในห้องไม่ให้จับคู่ผิด
 const STUDENT_NAME_FUZZY_THRESHOLD = 0.4;
 
-// --- สัญญารูปแบบชีทของครู (fixed layout) ---
+// --- สัญญารูปแบบชีทของครู ---
 // แถวที่ 1 (index 0): A1 = ชื่อวิชา, C1 เป็นต้นไป = ชื่อภาระงานแต่ละชิ้น (เพิ่มขึ้นเรื่อยๆ ไปทางขวา)
-// แถวที่ 2 (index 1): หัวตาราง (เลขที่ / ชื่อ-สกุล นักเรียน) - ไม่ใช้ประมวลผล ข้ามเสมอ
-// แถวที่ 3 (index 2) เป็นต้นไป: A = เลขที่, B = ชื่อ-สกุลนักเรียน, C เป็นต้นไป = TRUE/FALSE ของแต่ละภาระงาน
+// แถวถัดมา: บางวิชาครูใช้แถว 2-3 เขียนหัวตารางหรือข้อมูลอื่น (ไม่เหมือนกันทุกวิชา) - ไม่ใช้ประมวลผล
+// รายชื่อนักเรียน: เริ่มที่แถวแรก (ถัดจากแถว 1) ที่ A = เลขที่ (ตัวเลขล้วน) และ B = ชื่อ-สกุล
+//   C เป็นต้นไป = TRUE/FALSE ของแต่ละภาระงาน
 const TASK_ROW_INDEX = 0;
-const STUDENT_START_ROW = 2;
 const TASK_NAME_START_COL = 2;
-
+// หาแถวแรกของรายชื่อภายในกี่แถวแรกของชีท (กันไปเจอตารางอื่นที่ครูแปะไว้ไกลๆ ด้านล่าง)
+const ROSTER_SEARCH_ROWS = 20;
 export interface StudentRowMatch {
   row: string[] | null;
   matchedName: string | null;
@@ -27,20 +28,36 @@ function isValidRollNumber(val: string | undefined): boolean {
   return !!val && /^\d+$/.test(val.trim());
 }
 
+function isStudentNameCell(val: string | undefined): boolean {
+  const name = val?.trim();
+  return !!name && name.length > 2 && !name.includes('หมายเหตุ');
+}
+
 /**
- * หาแถวสุดท้ายของ "รายชื่อนักเรียนจริง" (exclusive end index) โดยไล่จากแถวที่ 3 (index 2)
- * ลงไปเรื่อยๆ แล้วหยุดทันทีที่คอลัมน์ A ไม่ใช่เลขที่ (ตัวเลขล้วน) อีกต่อไป
- * เพื่อกันไม่ให้ข้อมูลอื่นที่ครูอาจแปะไว้ใต้ตาราง (สรุปผล, checkbox อื่น, หมายเหตุ ฯลฯ)
- * หลุดเข้ามาปนกับข้อมูลนักเรียนโดยไม่ตั้งใจ
+ * หาช่วงแถวของ "รายชื่อนักเรียนจริง" [start, end)
+ * start = แถวแรกถัดจากแถวชื่องาน ที่ A เป็นเลขที่และ B เป็นชื่อ (ข้ามแถวหัวตาราง/ข้อมูลอื่นที่ครูใส่ไว้ด้านบน
+ * ซึ่งแต่ละวิชามีไม่เท่ากัน) แล้วไล่ลงไปจนคอลัมน์ A ไม่ใช่เลขที่อีกต่อไป
+ * เพื่อกันไม่ให้ข้อมูลอื่นที่ครูอาจแปะไว้ใต้ตาราง (สรุปผล, checkbox อื่น, หมายเหตุ ฯลฯ) หลุดเข้ามาปน
+ * ไม่เจอรายชื่อเลย -> start = end = 0
  */
-function getRosterEndRow(csvData: string[][]): number {
-  let end = STUDENT_START_ROW;
-  for (let i = STUDENT_START_ROW; i < csvData.length; i++) {
+export function getRosterRange(csvData: string[][]): { start: number; end: number } {
+  let start = -1;
+  const searchEnd = Math.min(csvData.length, TASK_ROW_INDEX + 1 + ROSTER_SEARCH_ROWS);
+  for (let i = TASK_ROW_INDEX + 1; i < searchEnd; i++) {
+    const row = csvData[i];
+    if (row && isValidRollNumber(row[0]) && isStudentNameCell(row[1])) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return { start: 0, end: 0 };
+  let end = start;
+  for (let i = start; i < csvData.length; i++) {
     const row = csvData[i];
     if (!row || !isValidRollNumber(row[0])) break;
     end = i + 1;
   }
-  return end;
+  return { start, end };
 }
 
 /**
@@ -50,9 +67,9 @@ function getRosterEndRow(csvData: string[][]): number {
  * ค้นหาเฉพาะในช่วงแถวรายชื่อจริง (ไม่ไล่เกินแถวสุดท้ายที่มีเลขที่ต่อเนื่อง)
  */
 function findStudentRow(csvData: string[][], studentName: string, rollNumber?: string): StudentRowMatch {
-  const rosterEnd = getRosterEndRow(csvData);
+  const roster = getRosterRange(csvData);
   const candidates: { name: string; roll: string; row: string[] }[] = [];
-  for (let i = STUDENT_START_ROW; i < rosterEnd; i++) {
+  for (let i = roster.start; i < roster.end; i++) {
     const row = csvData[i];
     if (!row) continue;
     const name = row[1]?.trim();
@@ -194,15 +211,15 @@ export interface StudentRosterEntry {
 }
 
 /**
- * Extracts the student roster from the CSV data, per the fixed sheet layout:
- * row 3 (index 2) onward, column A = เลขที่ (roll number), column B = ชื่อ-สกุล นักเรียน
+ * Extracts the student roster from the CSV data: the rows found by getRosterRange
+ * (column A = เลขที่ (roll number), column B = ชื่อ-สกุล นักเรียน)
  */
 export function extractStudentNames(csvData: string[][]): StudentRosterEntry[] {
-  if (!csvData || csvData.length <= STUDENT_START_ROW) return [];
+  if (!csvData || csvData.length === 0) return [];
 
-  const rosterEnd = getRosterEndRow(csvData);
+  const range = getRosterRange(csvData);
   const roster: StudentRosterEntry[] = [];
-  for (let i = STUDENT_START_ROW; i < rosterEnd; i++) {
+  for (let i = range.start; i < range.end; i++) {
     const row = csvData[i];
     if (!row) continue;
 
@@ -216,8 +233,17 @@ export function extractStudentNames(csvData: string[][]): StudentRosterEntry[] {
 }
 
 /**
- * Extracts teacher columns and their status for a specific student
+ * Extracts teacher columns and their status for a specific student (see extractTeacherTasksForStudent)
  */
+
+/** ต้นของ id คอลัมน์งานของนักเรียนคนนี้ในชีทนี้ (ตามด้วยเลขคอลัมน์) - ใช้หางานเดิมของชีทเดียวกัน */
+export function teacherColumnIdPrefix(studentName: string, sheetKey: string): string {
+  // Remove characters that might be invalid in Firestore document IDs
+  const safeSheetKey = sheetKey.replace(/[\/\\]/g, '-');
+  const safeStudentName = studentName.replace(/[\/\\]/g, '-');
+  return `${safeStudentName}_${safeSheetKey}_col`.replace(/\s+/g, '_');
+}
+
 export type ExtractReason = 'ok' | 'no_roster' | 'no_task_header' | 'student_not_found';
 
 export function extractTeacherTasksForStudent(
@@ -230,10 +256,10 @@ export function extractTeacherTasksForStudent(
   sheetKey: string = sheetName
 ): { tasks: TeacherColumn[]; match: StudentRowMatch; reason: ExtractReason } {
   const emptyMatch: StudentRowMatch = { row: null, matchedName: null, matchedRoll: null, isFuzzy: false };
-  if (!csvData || csvData.length <= STUDENT_START_ROW) return { tasks: [], match: emptyMatch, reason: 'no_roster' };
+  if (!csvData || csvData.length === 0) return { tasks: [], match: emptyMatch, reason: 'no_roster' };
 
-  const rosterEnd = getRosterEndRow(csvData);
-  if (rosterEnd <= STUDENT_START_ROW) return { tasks: [], match: emptyMatch, reason: 'no_roster' };
+  const roster = getRosterRange(csvData);
+  if (roster.end <= roster.start) return { tasks: [], match: emptyMatch, reason: 'no_roster' };
 
   const taskRow = csvData[TASK_ROW_INDEX];
 
@@ -263,7 +289,7 @@ export function extractTeacherTasksForStudent(
     // ตรวจสอบว่ามีนักเรียนอย่างน้อย 1 คนที่ได้ติ๊กถูก (TRUE) ในคอลัมน์นี้หรือไม่
     // ถ้าไม่มีเลย แสดงว่าครูยังไม่สั่งงานนี้ (นี่คือความตั้งใจ ไม่ใช่บั๊ก)
     let hasAnyTrue = false;
-    for (let r = STUDENT_START_ROW; r < rosterEnd; r++) {
+    for (let r = roster.start; r < roster.end; r++) {
       const row = csvData[r];
       if (!row) continue;
 
@@ -290,10 +316,7 @@ export function extractTeacherTasksForStudent(
     // Generate a STABLE ID: keyed by (นักเรียน, gid ของ Tab, ตำแหน่งคอลัมน์) เท่านั้น
     // ไม่ผูกกับชื่อวิชา/ชื่องาน เพราะสองอย่างนี้ครูแก้ไขได้ทีหลัง - ถ้าเอาไปรวมใน id
     // แล้วครูเปลี่ยนชื่อ จะทำให้ id เปลี่ยนตาม ระบบมองว่าเป็นงานใหม่ทันที (สถานะ/ประวัติเดิมหลุด)
-    // Remove characters that might be invalid in Firestore document IDs
-    const safeSheetKey = sheetKey.replace(/[\/\\]/g, '-');
-    const safeStudentName = studentName.replace(/[\/\\]/g, '-');
-    const id = `${safeStudentName}_${safeSheetKey}_col${col}`.replace(/\s+/g, '_').substring(0, 150);
+    const id = `${teacherColumnIdPrefix(studentName, sheetKey)}${col}`.substring(0, 150);
 
     tasks.push({
       id,
